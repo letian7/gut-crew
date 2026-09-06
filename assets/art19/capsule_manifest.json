@@ -1,0 +1,11 @@
+{
+  "file": "capsule_art19.glb",
+  "vertices": 11548,
+  "triangles": 23004,
+  "animation_groups": [
+    "Static"
+  ],
+  "draw_surfaces": 7,
+  "bytes": 564096,
+  "sha256": "2b073aa881adf59dda2bbdcd894a01b76c5e5a38efa5a80bc6cd14504962e488"
+}

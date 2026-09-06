@@ -1,0 +1,291 @@
+extends Node3D
+
+const ROLE_NAMES = ["SPARK", "KAKA", "BUBBLE", "SHROOM"]
+const ROLE_COLORS = [Color("#ffd83f"), Color("#f2e8d4"), Color("#63dcff"), Color("#b989ff")]
+const ROLE_SKILLS = [["Nerve Wire", "Overload"], ["Long Bone", "Bone Pin"], ["Plasma Surf", "Engulf"], ["Fungus Patch", "Ferment"]]
+const Q_COOLDOWNS = [3.6, 4.5, 5.4, 4.8]
+const E_COOLDOWNS = [7.5, 6.5, 1.2, 6.8]
+
+var player: CharacterBody3D
+var camera_pivot: Node3D
+var camera_3p: Camera3D
+var camera_1p: Camera3D
+var spring_arm: SpringArm3D
+var body_mesh: MeshInstance3D
+var head_mesh: MeshInstance3D
+var status_label: Label
+var help_label: Label
+var view_label: Label
+var crosshair: Label
+var role_index := 0
+var first_person := false
+var yaw := 0.0
+var pitch := -0.18
+var dodge_time := 0.0
+var jump_latch := false
+var skill_q_cd := 0.0
+var skill_e_cd := 0.0
+var living_time := 0.0
+var mounds: Array[MeshInstance3D] = []
+var acid_mesh: MeshInstance3D
+func _ready() -> void:
+	_build_environment()
+	_build_player()
+	_build_hud()
+	_set_role(0)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _mat(color: Color, transparent := false) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.88
+	if transparent:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	return mat
+
+func _build_environment() -> void:
+	var light := DirectionalLight3D.new()
+	light.rotation_degrees = Vector3(-55, -35, 0)
+	light.light_color = Color("#ffd9cf")
+	light.light_energy = 2.2
+	light.shadow_enabled = true
+	add_child(light)
+	var fill := OmniLight3D.new()
+	fill.position = Vector3(0, 6, 1)
+	fill.light_color = Color("#ff7ba7")
+	fill.light_energy = 8.0
+	fill.omni_range = 22.0
+	add_child(fill)
+	_make_static_box(Vector3(0, -0.4, 0), Vector3(30, 0.8, 18), Color("#8d4165"))
+	_make_acid(Vector3(0, 0.03, 4.8), Vector2(12, 5.4))
+	_make_mound(Vector3(-7, 0.1, -2.2), Vector3(4.5, 1.0, 3.2), Color("#a84c70"))
+	_make_mound(Vector3(4.8, 0.1, -3.0), Vector3(5.2, 1.25, 3.6), Color("#7e3c63"))
+	_make_mound(Vector3(9, 0.1, 2.2), Vector3(3.8, 0.85, 2.8), Color("#b55778"))
+	_make_static_box(Vector3(-4.5, 0.35, 1.0), Vector3(1.8, 0.7, 1.2), Color("#53bce6"))
+	_make_static_box(Vector3(4.2, 0.45, 2.6), Vector3(2.0, 0.9, 1.1), Color("#e95b68"))
+
+func _make_static_box(pos: Vector3, size: Vector3, color: Color) -> void:
+	var body := StaticBody3D.new()
+	body.position = pos
+	var mesh_instance := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = size
+	mesh_instance.mesh = box
+	mesh_instance.material_override = _mat(color)
+	body.add_child(mesh_instance)
+	var collision := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	collision.shape = shape
+	body.add_child(collision)
+	add_child(body)
+func _make_mound(pos: Vector3, scale_v: Vector3, color: Color) -> void:
+	var m := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 1.0
+	sphere.height = 2.0
+	m.mesh = sphere
+	m.position = pos
+	m.scale = scale_v
+	m.set_meta("base_scale", scale_v)
+	m.material_override = _mat(color)
+	add_child(m)
+	mounds.append(m)
+
+func _make_acid(pos: Vector3, size: Vector2) -> void:
+	var m := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = size
+	m.mesh = plane
+	m.position = pos
+	var mat := _mat(Color(0.62, 0.9, 0.18, 0.72), true)
+	mat.emission_enabled = true
+	mat.emission = Color("#557d09")
+	mat.emission_energy_multiplier = 1.2
+	m.material_override = mat
+	add_child(m)
+	acid_mesh = m
+
+func _build_player() -> void:
+	player = CharacterBody3D.new()
+	player.name = "Player"
+	player.position = Vector3(0, 1.15, 5.5)
+	player.floor_snap_length = 0.35
+	add_child(player)
+	var collision := CollisionShape3D.new()
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.42
+	capsule.height = 1.55
+	collision.shape = capsule
+	collision.position.y = 0.78
+	player.add_child(collision)
+	body_mesh = MeshInstance3D.new()
+	var body_capsule := CapsuleMesh.new()
+	body_capsule.radius = 0.42
+	body_capsule.height = 1.2
+	body_mesh.mesh = body_capsule
+	body_mesh.position.y = 0.75
+	player.add_child(body_mesh)
+	head_mesh = MeshInstance3D.new()
+	var head := SphereMesh.new()
+	head.radius = 0.34
+	head.height = 0.68
+	head_mesh.mesh = head
+	head_mesh.position.y = 1.55
+	player.add_child(head_mesh)
+	camera_pivot = Node3D.new()
+	camera_pivot.position = Vector3(0, 1.35, 0)
+	player.add_child(camera_pivot)
+	spring_arm = SpringArm3D.new()
+	spring_arm.spring_length = 5.2
+	spring_arm.margin = 0.18
+	camera_pivot.add_child(spring_arm)
+	camera_3p = Camera3D.new()
+	camera_3p.fov = 66.0
+	spring_arm.add_child(camera_3p)
+	camera_1p = Camera3D.new()
+	camera_1p.position = Vector3(0, 0.28, -0.18)
+	camera_1p.fov = 72.0
+	camera_pivot.add_child(camera_1p)
+	camera_3p.current = true
+	camera_pivot.rotation.x = pitch
+
+func _build_hud() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	status_label = Label.new()
+	status_label.position = Vector2(18, 16)
+	status_label.add_theme_font_size_override("font_size", 22)
+	layer.add_child(status_label)
+	view_label = Label.new()
+	view_label.position = Vector2(1030, 18)
+	view_label.add_theme_font_size_override("font_size", 18)
+	layer.add_child(view_label)
+	help_label = Label.new()
+	help_label.position = Vector2(18, 650)
+	help_label.text = "WASD move | Shift sprint | Space jump | RMB/Ctrl dodge | Q/E skills | Tab view | 1-4 role"
+	help_label.add_theme_font_size_override("font_size", 16)
+	layer.add_child(help_label)
+	crosshair = Label.new()
+	crosshair.text = "+"
+	crosshair.position = Vector2(635, 348)
+	crosshair.add_theme_font_size_override("font_size", 25)
+	layer.add_child(crosshair)
+
+func _set_role(index: int) -> void:
+	role_index = clampi(index, 0, 3)
+	var color: Color = ROLE_COLORS[role_index]
+	var mat := _mat(color)
+	mat.emission_enabled = true
+	mat.emission = color.darkened(0.55)
+	mat.emission_energy_multiplier = 0.28
+	body_mesh.material_override = mat
+	head_mesh.material_override = mat.duplicate()
+	_update_hud()
+
+func _update_hud() -> void:
+	var skills = ROLE_SKILLS[role_index]
+	var qtxt := "READY" if skill_q_cd <= 0.0 else "%.1f" % skill_q_cd
+	var etxt := "READY" if skill_e_cd <= 0.0 else "%.1f" % skill_e_cd
+	status_label.text = "%s | Q %s %s | E %s %s" % [ROLE_NAMES[role_index], skills[0], qtxt, skills[1], etxt]
+	view_label.text = "FIRST PERSON" if first_person else "THIRD PERSON"
+func _process(delta: float) -> void:
+	living_time += delta
+	for i in range(mounds.size()):
+		var base: Vector3 = mounds[i].get_meta("base_scale")
+		var breathe := 1.0 + sin(living_time * 1.6 + i * 1.3) * 0.06
+		mounds[i].scale = Vector3(base.x, base.y * breathe, base.z)
+	if acid_mesh:
+		acid_mesh.position.y = 0.03 + sin(living_time * 1.9) * 0.035
+		var am := acid_mesh.material_override as StandardMaterial3D
+		if am: am.emission_energy_multiplier = 1.0 + sin(living_time * 2.6) * 0.22
+
+func _physics_process(delta: float) -> void:
+	skill_q_cd = maxf(0.0, skill_q_cd - delta)
+	skill_e_cd = maxf(0.0, skill_e_cd - delta)
+	dodge_time = maxf(0.0, dodge_time - delta)
+	var ix := 0.0
+	var iz := 0.0
+	if Input.is_key_pressed(KEY_D): ix += 1.0
+	if Input.is_key_pressed(KEY_A): ix -= 1.0
+	if Input.is_key_pressed(KEY_S): iz += 1.0
+	if Input.is_key_pressed(KEY_W): iz -= 1.0
+	var move_dir := Vector3(ix, 0, iz)
+	if move_dir.length_squared() > 0.01:
+		move_dir = Basis(Vector3.UP, yaw) * move_dir.normalized()
+	var speed := 9.2 if Input.is_key_pressed(KEY_SHIFT) else 5.8
+	if dodge_time > 0.0: speed = 14.5
+	player.velocity.x = move_toward(player.velocity.x, move_dir.x * speed, 30.0 * delta)
+	player.velocity.z = move_toward(player.velocity.z, move_dir.z * speed, 30.0 * delta)
+	if not player.is_on_floor(): player.velocity.y -= 22.0 * delta
+	var jump_down := Input.is_key_pressed(KEY_SPACE)
+	if jump_down and not jump_latch and player.is_on_floor(): player.velocity.y = 8.2
+	jump_latch = jump_down
+	player.move_and_slide()
+	_update_hud()
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		yaw -= event.relative.x * 0.0025
+		pitch = clampf(pitch - event.relative.y * 0.0022, -1.05, 0.65)
+		player.rotation.y = yaw
+		camera_pivot.rotation.x = pitch
+	elif event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		elif event.button_index == MOUSE_BUTTON_RIGHT: _start_dodge()
+	elif event is InputEventKey and event.pressed and not event.echo:
+		match event.physical_keycode:
+			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			KEY_TAB: _toggle_view()
+			KEY_1: _set_role(0)
+			KEY_2: _set_role(1)
+			KEY_3: _set_role(2)
+			KEY_4: _set_role(3)
+			KEY_Q: _cast_skill(0)
+			KEY_E: _cast_skill(1)
+			KEY_CTRL: _start_dodge()
+
+func _start_dodge() -> void:
+	if dodge_time <= 0.0: dodge_time = 0.28
+
+func _toggle_view() -> void:
+	first_person = not first_person
+	camera_1p.current = first_person
+	camera_3p.current = not first_person
+	body_mesh.visible = not first_person
+	head_mesh.visible = not first_person
+func _cast_skill(slot: int) -> void:
+	if slot == 0:
+		if skill_q_cd > 0.0: return
+		skill_q_cd = Q_COOLDOWNS[role_index]
+	else:
+		if skill_e_cd > 0.0: return
+		skill_e_cd = E_COOLDOWNS[role_index]
+	var pulse := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.55
+	sphere.height = 1.1
+	pulse.mesh = sphere
+	var forward := Vector3.FORWARD.rotated(Vector3.UP, yaw)
+	var target_scale: Vector3 = [Vector3(0.22,0.22,6.0), Vector3(1.0,3.2,1.0), Vector3(3.8,3.8,3.8), Vector3(5.2,0.16,5.2)][role_index]
+	var offset := forward * 2.0 if role_index < 2 else Vector3.ZERO
+	pulse.position = player.position + Vector3(0, 0.3, 0) + offset
+	pulse.rotation.y = yaw
+	pulse.scale = target_scale * 0.06
+	var color: Color = ROLE_COLORS[role_index]
+	if slot == 1: color = color.lightened(0.18)
+	var mat := _mat(Color(color.r, color.g, color.b, 0.34), true)
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 1.7
+	pulse.material_override = mat
+	add_child(pulse)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(pulse, "scale", target_scale, 0.48)
+	var active_camera := camera_1p if first_person else camera_3p
+	var base_fov := 72.0 if first_person else 66.0
+	active_camera.fov = base_fov + 4.0
+	tween.tween_property(active_camera, "fov", base_fov, 0.26)
+	tween.chain().tween_callback(pulse.queue_free)
+
+# GODOT_POLISH_V1

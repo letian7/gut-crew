@@ -1,0 +1,34 @@
+# Godot generated cache
+.godot/
+
+# Local engine/tooling bundles
+Godot_4.7.2/
+.tools/
+
+# Local backups and QA output
+BACKUPS/
+GUT_CREW_QA_SHOTS/
+GUT_CREW_WEB_GAMEPLAY_LOCK_FROZEN_2026-08-27/
+
+# Generated logs, transfer packages and shortcuts
+*.log
+*.b64
+*.zip
+*.lnk
+
+# Historical one-off migration/patch utilities
+apply_*.js
+patch_*.js
+fix_*.js
+game3d_lock_test.js
+
+# Root-level review captures; game assets remain tracked
+/art_v3_*.png
+/art_v3_*.png.import
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak

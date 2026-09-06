@@ -1,0 +1,96 @@
+{
+  "stage": "INTEGRATION_CANDIDATE",
+  "assets": [
+    {
+      "file": "spark_art18.glb",
+      "vertices": 19956,
+      "triangles": 39668,
+      "animation_groups": [
+        "SparkBody",
+        "SparkHead",
+        "SparkBrowL",
+        "SparkBrowR",
+        "SparkMouth",
+        "SparkArmL",
+        "SparkGloveL",
+        "SparkLegL",
+        "SparkProngL",
+        "SparkArmR",
+        "SparkGloveR",
+        "SparkLegR",
+        "SparkProngR"
+      ],
+      "draw_surfaces": 37,
+      "bytes": 990388,
+      "sha256": "ac9609b293d20347954611462d9619369590070f31c241431278075f634278c3"
+    },
+    {
+      "file": "kaka_art18.glb",
+      "vertices": 15160,
+      "triangles": 30116,
+      "animation_groups": [
+        "KakaBody",
+        "KakaHead",
+        "KakaBrowL",
+        "KakaBrowR",
+        "KakaMouth",
+        "KakaArmL",
+        "KakaFistL",
+        "KakaLegL",
+        "KakaArmR",
+        "KakaFistR",
+        "KakaLegR"
+      ],
+      "draw_surfaces": 24,
+      "bytes": 749968,
+      "sha256": "7e7241dd7feaa9dd8d70be24a24b4ea37e2ab6fad66b4e66c876d027e31aa2e2"
+    },
+    {
+      "file": "bubble_art18.glb",
+      "vertices": 10512,
+      "triangles": 20912,
+      "animation_groups": [
+        "BubbleBody",
+        "BubbleHead",
+        "BubbleMouth",
+        "BubbleArmL",
+        "BubbleFootL",
+        "BubbleArmR",
+        "BubbleFootR",
+        "BubbleCore"
+      ],
+      "draw_surfaces": 14,
+      "bytes": 519548,
+      "sha256": "3c265727be396ccfc78643c0d5824ce29f20b9af0f26c2474cfa0c26f8bf4db2"
+    },
+    {
+      "file": "shroom_art18.glb",
+      "vertices": 14490,
+      "triangles": 28736,
+      "animation_groups": [
+        "ShroomBody",
+        "ShroomFace",
+        "ShroomMouth",
+        "ShroomCap",
+        "ShroomArmL",
+        "ShroomFootL",
+        "ShroomArmR",
+        "ShroomFootR"
+      ],
+      "draw_surfaces": 18,
+      "bytes": 712200,
+      "sha256": "066cffcd5b5f5d2470eebc0d8a779ed3b6c57f59df19108940fdcd92a32bc9ba"
+    },
+    {
+      "file": "rugae_passage_art18.glb",
+      "vertices": 30966,
+      "triangles": 61768,
+      "animation_groups": [
+        "Static"
+      ],
+      "draw_surfaces": 6,
+      "bytes": 1493840,
+      "sha256": "672a80ea4db34b53a256e80dfe3dec5f142657087848647b3f261310debf7569"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+[
+  {
+    "file": "hairball_art19.glb",
+    "vertices": 6224,
+    "triangles": 12332,
+    "animation_groups": [
+      "Static",
+      "Tongue"
+    ],
+    "draw_surfaces": 6,
+    "bytes": 307728,
+    "sha256": "039fb536af002bb515201af2676b09b98dcacd1644423bb32db17a09a62f5428"
+  },
+  {
+    "file": "platelet_art19.glb",
+    "vertices": 6152,
+    "triangles": 12216,
+    "animation_groups": [
+      "Static",
+      "HelmetDome",
+      "PlateletArm",
+      "PlateletArm2"
+    ],
+    "draw_surfaces": 12,
+    "bytes": 309620,
+    "sha256": "a8628c1a7d6be5873a3f5ef962e688a9480ed9155f33c7f0b3f651c02027b2bc"
+  },
+  {
+    "file": "parasite_art19.glb",
+    "vertices": 5560,
+    "triangles": 11024,
+    "animation_groups": [
+      "Static",
+      "ParasiteMouth"
+    ],
+    "draw_surfaces": 8,
+    "bytes": 277792,
+    "sha256": "ec0f2cb26abda0c57281d2b23262f601f4cc9a567d8ca7fe6a533dc88b054025"
+  },
+  {
+    "file": "mochi_art19.glb",
+    "vertices": 25812,
+    "triangles": 51432,
+    "animation_groups": [
+      "Static",
+      "CatHead",
+      "LeftPaw",
+      "RightPaw"
+    ],
+    "draw_surfaces": 14,
+    "bytes": 1253688,
+    "sha256": "1d10cd05099dc85c6486d54e550443783a7a027abe287494ce7f343a461f3223"
+  },
+  {
+    "file": "hand_art19.glb",
+    "vertices": 7340,
+    "triangles": 14588,
+    "animation_groups": [
+      "Static"
+    ],
+    "draw_surfaces": 4,
+    "bytes": 359908,
+    "sha256": "dca1c0147e7d3e44db9bce8a88c73bb7c9ad15f06f30a81a5739a98380dc3a38"
+  }
+]
