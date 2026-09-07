@@ -40,6 +40,14 @@ var rng := RandomNumberGenerator.new()
 var enabled := true
 var clean_flash := 0.0
 var clean_streak := 0
+var care_score := 0
+var care_combo := 0
+var best_combo := 0
+var perfect_actions := 0
+var care_misses := 0
+var sterile_bursts := 0
+var last_grade := ""
+var grade_flash := 0.0
 var sound_lock := 0.0
 var work_audio: AudioStreamPlayer
 var wash_sound: AudioStreamWAV
@@ -47,7 +55,7 @@ var success_sound: AudioStreamWAV
 
 func build(host) -> void:
 	game = host
-	name = "ClinicAndSalvage27"
+	name = "ClinicAndSalvage28"
 	rng.randomize()
 	# Old regression fixtures use an explicitly separate 1x coordinate layout.
 	enabled = not (DisplayServer.get_name() == "headless" and game.world_scale < 2.0)
@@ -163,7 +171,7 @@ func _build_site(title: String, desc: String, kind: String, authored: Vector3, s
 	var disposal := _station("医疗废物箱",site.position+Vector3(7,0,0),Color("71b8b1")) if kind == "cargo" else null
 	_cross(site,Vector3(-2.7,1.4,0),1.3)
 	var label := _label(site,title+"\n待诊断 · 长按 F",Vector3(0,2.35,0),Color("a4f3d3"))
-	sites.append({"root":site,"title":title,"desc":desc,"kind":kind,"specialist":specialist,"stage":"scan","scan":0.0,"cells":cells,"tissue":tissue,"wound":wound,"stitches":stitches,"package":package,"bin":disposal,"hits":0,"last_pulse":-1,"label":label})
+	sites.append({"root":site,"title":title,"desc":desc,"kind":kind,"specialist":specialist,"stage":"scan","scan":0.0,"cells":cells,"tissue":tissue,"wound":wound,"stitches":stitches,"package":package,"bin":disposal,"hits":0,"last_pulse":-1,"label":label,"scan_specialist":false,"clean_specialist":false,"care_specialist":false,"misses":0,"started":-1.0,"grade":""})
 
 func _build_fishing(authored: Vector3, water: Vector3) -> void:
 	var stand := _station("胃酸钓宝 · F\n鱼饵 3 C / 6 次",game.world_point(authored),Color("79d8ec"))
@@ -211,6 +219,7 @@ func _process(delta: float) -> void:
 	clock += delta
 	sound_lock = maxf(0.0,sound_lock-delta)
 	clean_flash = maxf(0.0,clean_flash-delta)
+	grade_flash = maxf(0.0,grade_flash-delta)
 	if clean_flash<=0.0: clean_streak = 0
 	spray_time = maxf(0.0,spray_time-delta)
 	spray.visible = spray_time > 0.0
@@ -291,6 +300,9 @@ func handle_interaction(delta: float, held: bool) -> bool:
 				_prompt("长按 F 诊断：%s · 闪仔扫描更快" % site.title,hold_progress/duration)
 				if hold_progress >= duration:
 					site.stage = "clean"
+					site.started = clock
+					site.scan_specialist = game.role_index == 0
+					if site.scan_specialist: _score_action(8,"闪仔快速确诊")
 					_update_site_label(i)
 					game._toast("确诊："+site.desc+" · 先清洗病灶",Color("a1ffe0"),3.0)
 			"clean":
@@ -338,6 +350,26 @@ func wash(index: int, delta: float) -> void:
 		foam[i].global_position = start.lerp(target,f)+Vector3(sin(clock*13+i)*0.16,cos(clock*11+i)*0.12,0)
 		foam[i].scale = Vector3.ONE*(0.19+f*0.18)
 
+func _score_action(points: int, reason: String, combo_add := 1) -> void:
+	care_score += maxi(0,points)
+	care_combo += maxi(0,combo_add)
+	best_combo = maxi(best_combo,care_combo)
+	if care_combo in [4,8,12,16]:
+		game._toast("急诊连携 x%d · %s · 评分 +%d" % [care_combo,reason,points],Color("8fffe0"),1.6)
+
+func _sterile_burst(index: int, pos: Vector3, radius: float) -> int:
+	var softened := 0
+	for cell in sites[index].cells:
+		var stain: MeshInstance3D = cell.mesh
+		if float(cell.dirt)<=0.05 or stain.global_position.distance_to(pos)>radius: continue
+		cell.dirt = maxf(0.05,float(cell.dirt)-0.24)
+		stain.scale = (cell.base as Vector3)*maxf(0.01,sqrt(float(cell.dirt)))
+		softened += 1
+	sterile_bursts += 1
+	care_score += 12
+	game._toast("泡泡无菌爆发！软化附近 %d 块污渍 · 急诊评分 +12" % softened,Color("a8fff4"),1.8)
+	return softened
+
 func clean_at(index: int, pos: Vector3, radius: float, amount: float) -> int:
 	if index<0 or index>=sites.size() or sites[index].stage != "clean" or amount<=0.0: return 0
 	var changed := 0
@@ -352,7 +384,12 @@ func clean_at(index: int, pos: Vector3, radius: float, amount: float) -> int:
 			game.credits += 1
 			changed += 1
 	if changed>0:
+		var old_streak := clean_streak
 		clean_streak += changed
+		sites[index].clean_specialist = bool(sites[index].clean_specialist) or game.role_index == 2
+		_score_action(changed,"连续清洁",changed)
+		if game.role_index == 2 and int(clean_streak/4) > int(old_streak/4):
+			_sterile_burst(index,pos,radius+1.8)
 		clean_flash = 1.2
 		_chime()
 	if clean_fraction(index) >= 0.9999:
@@ -374,8 +411,15 @@ func care_press(index: int) -> bool:
 	if int(sites[index].last_pulse)==pulse: return false
 	var window := care_window(index)
 	if needle()<window.x or needle()>window.y:
-		game._toast("慢一点，跟着组织的脉搏按 F · 已完成的治疗不会丢失",Color("ffe5a0"),1.4)
+		care_combo = 0
+		care_misses += 1
+		sites[index].misses = int(sites[index].misses)+1
+		game._toast("节奏失误 · 急诊连携中断，但已完成治疗不会丢失",Color("ffe5a0"),1.4)
 		return false
+	var expert: bool = game.role_index == sites[index].specialist
+	sites[index].care_specialist = bool(sites[index].care_specialist) or expert
+	perfect_actions += 1
+	_score_action(14 if expert else 10,"专业治疗" if expert else "稳定治疗")
 	sites[index].hits = mini(3,int(sites[index].hits)+1)
 	sites[index].last_pulse = pulse
 	_chime(true)
@@ -388,6 +432,9 @@ func care_press(index: int) -> bool:
 func pickup_cargo(index: int) -> bool:
 	if cargo_site>=0 or sites[index].stage!="care" or sites[index].kind!="cargo": return false
 	cargo_site = index
+	if game.role_index == 1:
+		sites[index].care_specialist = true
+		_score_action(14,"咔咔专业搬运")
 	return true
 
 func drop_cargo() -> void:
@@ -413,20 +460,29 @@ func complete_site(index: int) -> void:
 	if sites[index].stage != "care": return
 	if sites[index].kind != "cargo" and int(sites[index].hits)<3: return
 	if sites[index].kind == "cargo" and sites[index].package.visible: return
+	var specialist_steps := int(bool(sites[index].scan_specialist))+int(bool(sites[index].clean_specialist))+int(bool(sites[index].care_specialist))
+	var elapsed := clock-float(sites[index].started) if float(sites[index].started)>=0.0 else 999.0
+	var grade := "S" if specialist_steps==3 and int(sites[index].misses)==0 and elapsed<=90.0 else ("A" if specialist_steps>=2 and int(sites[index].misses)<=1 else "B")
+	var bonus := 18 if grade=="S" else (10 if grade=="A" else 4)
+	var grade_score := 60 if grade=="S" else (35 if grade=="A" else 18)
+	sites[index].grade = grade
 	sites[index].stage = "healthy"
 	completed += 1
-	game.credits += 30
+	last_grade = grade
+	grade_flash = 4.0
+	care_score += grade_score
+	game.credits += 30+bonus
 	game.hp = minf(100.0,game.hp+25.0)
 	game.acid_next = maxf(game.acid_next,14.0)
 	game.spasm_next = maxf(game.spasm_next,12.0)
 	_chime(true)
 	(sites[index].wound.material_override as StandardMaterial3D).albedo_color = Color("edb0ba")
 	_update_site_label(index)
-	game._toast("救助成功！%s · +30 C · 恢复 25 HP · 身体压力下降" % sites[index].title,Color("a4ffcb"),3.5)
+	game._toast("急诊评级 %s！%s · 分工 %d/3 · +%d C · 恢复 25 HP" % [grade,sites[index].title,specialist_steps,30+bonus],Color("a4ffcb"),4.0)
 
 func _update_site_label(index: int) -> void:
 	var site: Dictionary = sites[index]
-	var status := "冲洗污渍" if site.stage=="clean" else ("处理病因" if site.stage=="care" else "已治愈 ✓")
+	var status := "冲洗污渍" if site.stage=="clean" else ("处理病因" if site.stage=="care" else "已治愈 · %s级 ✓" % site.grade)
 	site.label.text = site.title+"\n"+status
 
 func _line(mesh: MeshInstance3D, a: Vector3, b: Vector3, width: float) -> void:
@@ -540,7 +596,7 @@ func buy_upgrade() -> bool:
 func snapshot() -> Dictionary:
 	var patients: Array[Dictionary] = []
 	for i in range(sites.size()):
-		patients.append({"stage":sites[i].stage,"clean":snappedf(clean_fraction(i),0.01),"hits":int(sites[i].hits)})
+		patients.append({"stage":sites[i].stage,"clean":snappedf(clean_fraction(i),0.01),"hits":int(sites[i].hits),"grade":sites[i].grade,"misses":int(sites[i].misses),"relay":[bool(sites[i].scan_specialist),bool(sites[i].clean_specialist),bool(sites[i].care_specialist)]})
 	var stocks: Array[int] = []
 	for spot in fishing_spots: stocks.append(int(spot.left))
-	return {"patients":patients,"completed":completed,"clean_cells":clean_cells,"cargo":cargo_site,"bag":bag.duplicate(true),"sold":sold_value,"levels":levels.duplicate(),"fishing_stock":stocks,"fish_state":fish_state}
+	return {"patients":patients,"completed":completed,"clean_cells":clean_cells,"cargo":cargo_site,"bag":bag.duplicate(true),"sold":sold_value,"levels":levels.duplicate(),"fishing_stock":stocks,"fish_state":fish_state,"care_score":care_score,"care_combo":care_combo,"best_combo":best_combo,"perfect_actions":perfect_actions,"care_misses":care_misses,"sterile_bursts":sterile_bursts,"last_grade":last_grade}

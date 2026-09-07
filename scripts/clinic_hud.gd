@@ -4,7 +4,7 @@ func build(system) -> void:
 	clinic = system
 	mouse_filter = MOUSE_FILTER_IGNORE
 	position = Vector2(18,132)
-	size = Vector2(252,192)
+	size = Vector2(252,218)
 func _process(_delta: float) -> void:
 	visible = clinic.active()
 	if visible: queue_redraw()
@@ -21,7 +21,8 @@ func _draw() -> void:
 	draw_string(font,Vector2(12,25),"急诊班 / CARE CREW",HORIZONTAL_ALIGNMENT_LEFT,-1,16,Color("adf2d4"))
 	draw_string(font,Vector2(12,49),"%s  Lv.%d" % [clinic.JOBS[role],clinic.levels[role]],HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("f7ead5"))
 	draw_string(font,Vector2(12,72),"救助 %d/3   清洁 %d/60" % [clinic.completed,clinic.clean_cells],HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("c9e2d4"))
-	draw_string(font,Vector2(12,95),"背包 %d/8 · 可卖 %d C" % [clinic.bag.size(),clinic.bag_value()],HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("ffe5a1"))
+	draw_string(font,Vector2(12,95),"急诊评分 %d · 连携 x%d  BEST %d" % [clinic.care_score,clinic.care_combo,clinic.best_combo],HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("8fffe0"))
+	draw_string(font,Vector2(12,118),"背包 %d/8 · 可卖 %d C" % [clinic.bag.size(),clinic.bag_value()],HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("ffe5a1"))
 	var title := "绿十字救助 · 蓝点钓宝"
 	var caption := "F 工作 / 1–4 换职业"
 	var needle := -1.0
@@ -41,17 +42,24 @@ func _draw() -> void:
 		elif site.stage=="care": caption = "咔咔搬走异物 → 医疗废物箱"
 		elif site.stage=="healthy": caption = "已治愈 ✓ 压力降低"
 		else: caption = "长按 F 诊断 · 闪仔更快"
-	draw_string(font,Vector2(12,121),title,HORIZONTAL_ALIGNMENT_LEFT,230,14,Color("a8f3dd"))
-	draw_string(font,Vector2(12,145),caption,HORIZONTAL_ALIGNMENT_LEFT,230,12,Color("e7e4ce"))
+	draw_string(font,Vector2(12,145),title,HORIZONTAL_ALIGNMENT_LEFT,230,14,Color("a8f3dd"))
+	draw_string(font,Vector2(12,169),caption,HORIZONTAL_ALIGNMENT_LEFT,230,12,Color("e7e4ce"))
 	if needle>=0.0:
 		var bar_pos := Vector2(get_viewport_rect().size.x*0.5-130,408)-position
 		draw_style_box(style,Rect2(bar_pos-Vector2(5,5),Vector2(270,30)))
 		draw_rect(Rect2(bar_pos,Vector2(260,20)),Color("3e5153"))
 		draw_rect(Rect2(bar_pos+Vector2(260*window.x,0),Vector2(260*(window.y-window.x),20)),Color("6ed1a0"))
 		draw_line(bar_pos+Vector2(260*needle,-4),bar_pos+Vector2(260*needle,24),Color.WHITE,3.0)
-		draw_string(font,Vector2(12,176),"看屏幕中间 · 一次一收线/治疗",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("91a8a0"))
+		draw_string(font,Vector2(12,200),"看屏幕中间 · 一次一收线/治疗",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("91a8a0"))
 	else:
-		draw_string(font,Vector2(12,176),"本局升级 · 不影响职业切换",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("91a8a0"))
+		var footer := "按职业分工可获得 S 级急诊奖励"
+		if clinic.context_site>=0:
+			var current: Dictionary = clinic.sites[clinic.context_site]
+			footer = "分工：诊%s  洗%s  治%s" % ["✓" if current.scan_specialist else "·","✓" if current.clean_specialist else "·","✓" if current.care_specialist else "·"]
+		draw_string(font,Vector2(12,200),footer,HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("91a8a0"))
 	if clinic.clean_flash>0:
 		var pop := Vector2(get_viewport_rect().size.x*0.5+70,368)-position
-		draw_string(font,pop,"洁净 +%d  /  +%d C" % [clinic.clean_streak,clinic.clean_streak],HORIZONTAL_ALIGNMENT_LEFT,-1,18,Color("b3ffe4"))
+		draw_string(font,pop,"洁净 +%d  /  连携 x%d" % [clinic.clean_streak,clinic.care_combo],HORIZONTAL_ALIGNMENT_LEFT,-1,18,Color("b3ffe4"))
+	if clinic.grade_flash>0.0:
+		var grade_pos := Vector2(get_viewport_rect().size.x*0.5-92,326)-position
+		draw_string(font,grade_pos,"急诊评级  %s" % clinic.last_grade,HORIZONTAL_ALIGNMENT_LEFT,-1,28,Color("ffe99b"))
