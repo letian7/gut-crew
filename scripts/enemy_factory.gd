@@ -73,12 +73,23 @@ static func build(parent: Node3D, kind: String) -> Dictionary:
 	match kind:
 		"HAIRBALL": main = _hairball(root)
 		"PLATELET": main = _platelet(root)
+		"RAMMER": main = _rammer(root)
+		"SPITTER": main = _spitter(root)
+		"SPLITTER", "SPLIT_LARVA": main = _splitter(root, kind == "SPLIT_LARVA")
 		"TOY_MOUSE": main = _toy_mouse(root)
 		_: main = _parasite(root)
-	root.scale = Vector3.ONE * (1.20 if kind == "HAIRBALL" else (1.12 if kind == "PLATELET" else (1.0 if kind == "TOY_MOUSE" else 1.18)))
+	var size := 1.20 if kind == "HAIRBALL" else (1.12 if kind == "PLATELET" else (1.0 if kind == "TOY_MOUSE" else 1.18))
+	if kind == "RAMMER": size = 1.24
+	elif kind == "SPITTER": size = 1.12
+	elif kind == "SPLITTER": size = 1.28
+	elif kind == "SPLIT_LARVA": size = 0.72
+	root.scale = Vector3.ONE * size
 	root.set_meta("base_scale", root.scale)
 	for child in root.get_children():
 		if child is MeshInstance3D:
+			child.set_meta("base_part_scale", child.scale)
+			child.set_meta("base_part_position", child.position)
+			child.set_meta("base_part_rotation", child.rotation)
 			var mat := child.material_override as StandardMaterial3D
 			if mat: child.set_meta("base_albedo", mat.albedo_color)
 	CreatureArt.attach(root, kind)
@@ -137,6 +148,52 @@ static func _parasite(root: Node3D) -> MeshInstance3D:
 		tooth.rotation.z = -a
 	_eyes(root,1.08,-0.56,0.24,Vector3(0.13,0.15,0.075))
 	return body
+static func _rammer(root: Node3D) -> MeshInstance3D:
+	var shell := Color("#d58b55")
+	var belly := Color("#f0bd75")
+	var horn := Color("#fff0c7")
+	var dark := Color("#402c35")
+	var body := sphere(root,"RammerBody",Vector3(0,0.62,0.08),Vector3(1.08,0.72,1.22),shell)
+	for i in range(5):
+		var plate := sphere(root,"ArmorPlate",Vector3(0,0.98,0.52-float(i)*0.27),Vector3(0.82-float(i)*0.07,0.18,0.38),belly)
+		plate.rotation.x = -0.16
+	for sx in [-1.0,1.0]:
+		var spike := cylinder(root,"ChargeHorn",Vector3(0.29*sx,0.76,-0.94),Vector3(0.12,0.52,0.12),horn,Vector3(PI*0.5,0,sx*0.12))
+		spike.scale.y = 0.72
+		sphere(root,"RammerEye",Vector3(0.23*sx,0.87,-0.72),Vector3(0.13,0.15,0.08),Color("#fff7df"))
+		sphere(root,"RammerPupil",Vector3(0.23*sx,0.87,-0.78),Vector3(0.055,0.075,0.04),dark)
+	for sx in [-1.0,1.0]: sphere(root,"RammerFoot",Vector3(0.50*sx,0.18,0.22),Vector3(0.30,0.18,0.38),dark)
+	return body
+
+static func _spitter(root: Node3D) -> MeshInstance3D:
+	var teal := Color("#4ebc98")
+	var acid := Color("#b9ef42")
+	var cream := Color("#edf0bc")
+	var body := sphere(root,"SpitterSac",Vector3(0,0.72,0.18),Vector3(0.92,0.90,0.82),teal,1.0,0.16)
+	for i in range(7):
+		var a := TAU*float(i)/7.0
+		sphere(root,"AcidBlister",Vector3(cos(a)*0.48,0.78+sin(a)*0.34,0.25),Vector3.ONE*(0.15+float(i%2)*0.035),acid,0.92,1.3)
+	var tube := cylinder(root,"SpitTube",Vector3(0,0.68,-0.67),Vector3(0.24,0.56,0.24),teal,Vector3(PI*0.5,0,0))
+	tube.rotation.x = PI*0.5
+	torus(root,"SpitMouth",Vector3(0,0.68,-0.98),Vector3(0.25,0.25,0.12),acid,Vector3(PI*0.5,0,0),1.8)
+	for sx in [-1.0,1.0]:
+		cylinder(root,"EyeStalk",Vector3(0.30*sx,1.18,-0.12),Vector3(0.07,0.34,0.07),teal,Vector3(0,0,-sx*0.18))
+		sphere(root,"SpitterEye",Vector3(0.36*sx,1.42,-0.17),Vector3(0.15,0.17,0.12),cream)
+		sphere(root,"SpitterPupil",Vector3(0.36*sx,1.42,-0.28),Vector3(0.06,0.08,0.04),Color("#23362f"))
+	return body
+
+static func _splitter(root: Node3D, larva := false) -> MeshInstance3D:
+	var pink := Color("#ef7fa6") if not larva else Color("#ff9fba")
+	var pale := Color("#ffc3cf")
+	var body := sphere(root,"SplitterBody",Vector3(-0.24,0.58,0),Vector3(0.82,0.72,0.88),pink,1.0,0.18)
+	sphere(root,"SplitterLobe",Vector3(0.35,0.61,0.08),Vector3(0.72,0.66,0.78),pale,1.0,0.10)
+	box(root,"SplitSeam",Vector3(0.05,0.67,-0.71),Vector3(0.055,0.46,0.05),Color("#9d3f68"))
+	for sx in [-1.0,0.0,1.0]:
+		sphere(root,"SplitterEye",Vector3(sx*0.27,0.79,-0.64),Vector3(0.11,0.13,0.07),Color("#fff7df"))
+		sphere(root,"SplitterPupil",Vector3(sx*0.27,0.79,-0.70),Vector3(0.045,0.06,0.035),Color("#412239"))
+	for i in range(5): sphere(root,"MitosisBubble",Vector3(-0.48+float(i)*0.25,0.27,0.42),Vector3.ONE*(0.10+float(i%2)*0.025),pale,0.88,0.45)
+	return body
+
 static func _toy_mouse(root: Node3D) -> MeshInstance3D:
 	var lime := Color("#9cf26b")
 	var mint := Color("#c9ff9d")
@@ -195,6 +252,34 @@ static func animate(root: Node3D, kind: String, time: float, velocity: Vector3, 
 				if child.name.begins_with("ParasiteSegment"):
 					child.position.x = sin(time*5.5 + float(idx)*0.8)*0.08
 					idx += 1
+		"RAMMER":
+			for child in root.get_children():
+				if child.name.begins_with("ArmorPlate"):
+					var rest: Vector3 = child.get_meta("base_part_position",child.position)
+					child.position.y = rest.y + sin(time*5.0+rest.z*7.0)*0.018
+				elif child.name.begins_with("ChargeHorn"):
+					var rest_rot: Vector3 = child.get_meta("base_part_rotation",child.rotation)
+					child.rotation.z = rest_rot.z + sin(time*7.0)*0.015 + attack*0.08
+			root.rotation.x = -attack * 0.18
+		"SPITTER":
+			for child in root.get_children():
+				if child.name.begins_with("AcidBlister"):
+					var rest_scale: Vector3 = child.get_meta("base_part_scale",child.scale)
+					child.scale = rest_scale*(1.0+sin(time*4.4+child.position.x*5.0)*0.07)
+				elif child.name.begins_with("EyeStalk"):
+					var rest_rot: Vector3 = child.get_meta("base_part_rotation",child.rotation)
+					child.rotation.z = rest_rot.z + sin(time*3.2+child.position.x)*0.08
+			var mouth := root.get_node_or_null("SpitMouth") as Node3D
+			if mouth: mouth.scale = Vector3(0.25,0.25,0.12)*(1.0+attack*0.55)
+		"SPLITTER", "SPLIT_LARVA":
+			var lobe := root.get_node_or_null("SplitterLobe") as Node3D
+			if lobe:
+				lobe.position.x = 0.35 + sin(time*4.8)*0.035
+				lobe.scale = Vector3(0.72,0.66,0.78)*(1.0+attack*0.18)
+			for child in root.get_children():
+				if child.name.begins_with("MitosisBubble"):
+					var rest: Vector3 = child.get_meta("base_part_position",child.position)
+					child.position.y = rest.y + sin(time*6.0+rest.x*8.0)*0.035
 		"TOY_MOUSE":
 			for child in root.get_children():
 				if child.name.begins_with("MouseWheel"): child.rotation.x += speed * 0.018

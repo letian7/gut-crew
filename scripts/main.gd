@@ -177,6 +177,7 @@ var tactical_map: Control
 var impact_feedback: Control
 var clinic_system: Node3D
 var anatomy_route: Node3D
+var enemy_ecology: Node
 static var reload_front_target := "main"
 func _ready() -> void:
 	_build_environment()
@@ -456,6 +457,21 @@ func _build_enemies() -> void:
 		_spawn_enemy(String(spec["kind"]), spec["pos"] as Vector3, spec["accent"] as Color, float(spec["hp"]), float(spec["speed"]), true, String(spec["territory"]))
 		var spawned := enemies[-1]
 		OrganWorldFactory.decorate_enemy(spawned, String(spec["display_name"]), spec["accent"] as Color, String(spec["trait"]))
+	var specialists := [
+		["RAMMER",Vector3(-14,0.2,7),105.0,3.4,"CARDIA MUCOUS RIDGE"], ["RAMMER",Vector3(-7,0.2,-5),110.0,3.5,"GASTRIC BODY"],
+		["RAMMER",Vector3(3,0.2,5),108.0,3.6,"GASTRIC BODY"], ["RAMMER",Vector3(12,0.2,-7),118.0,3.5,"PYLORIC RUN"],
+		["RAMMER",Vector3(19,0.2,2),122.0,3.7,"DUODENUM BEND"],
+		["SPITTER",Vector3(-17,0.2,-8),82.0,1.8,"CARDIA MUCOUS RIDGE"], ["SPITTER",Vector3(-9,0.2,5),86.0,1.9,"GASTRIC BODY"],
+		["SPITTER",Vector3(1,0.2,-8),88.0,1.9,"PYLORIC ANTRUM"], ["SPITTER",Vector3(10,0.2,6),92.0,2.0,"PYLORIC RUN"],
+		["SPITTER",Vector3(17,0.2,-10),96.0,2.0,"DUODENUM BEND"],
+		["SPLITTER",Vector3(-12,0.2,-10),96.0,2.8,"CARDIA MUCOUS RIDGE"], ["SPLITTER",Vector3(-3,0.2,7),100.0,2.9,"GASTRIC BODY"],
+		["SPLITTER",Vector3(5,0.2,-7),104.0,3.0,"PYLORIC ANTRUM"], ["SPLITTER",Vector3(13,0.2,4),108.0,3.0,"PYLORIC RUN"],
+		["SPLITTER",Vector3(20,0.2,-6),112.0,3.1,"DUODENUM BEND"]]
+	for spec in specialists:
+		_spawn_enemy(String(spec[0]),spec[1] as Vector3,Color("#f0a06a"),float(spec[2]),float(spec[3]),true,String(spec[4]))
+	enemy_ecology = preload("res://scripts/enemy_ecology.gd").new()
+	add_child(enemy_ecology)
+	enemy_ecology.build(self)
 
 func _spawn_enemy(kind: String, pos: Vector3, color: Color, max_hp: float, speed: float, wild := false, territory := "") -> void:
 	var e := CharacterBody3D.new()
@@ -505,6 +521,7 @@ func _spawn_enemy(kind: String, pos: Vector3, color: Color, max_hp: float, speed
 	e.add_child(col)
 	add_child(e)
 	enemies.append(e)
+	if is_instance_valid(enemy_ecology): enemy_ecology.configure_enemy(e)
 
 func _build_player() -> void:
 	player = CharacterBody3D.new()
@@ -1078,7 +1095,9 @@ func _physics_process(delta: float) -> void:
 	was_on_floor = now_on_floor
 	invuln = maxf(0.0, invuln - delta)
 	ferment_time = maxf(0.0, ferment_time - delta)
-	if not mouth_intro.active: _tick_enemies(delta)
+	if not mouth_intro.active:
+		if is_instance_valid(enemy_ecology): enemy_ecology.tick(delta)
+		_tick_enemies(delta)
 	_update_hud()
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE:
@@ -1286,6 +1305,7 @@ func _damage_enemy(e: CharacterBody3D, amount: float, stun := 0.0, pin := 0.0, i
 		credits += 6
 		var death_kind := String(e.get_meta("kind"))
 		EnemyFactory.spawn_death(self, death_kind, e.global_position)
+		if is_instance_valid(enemy_ecology): enemy_ecology.on_enemy_defeated(e)
 		var squash := Vector3(1.5,0.08,1.5)
 		if death_kind == "PLATELET": squash = Vector3(1.7,0.12,1.1)
 		elif death_kind == "PARASITE": squash = Vector3(0.72,1.65,0.72)
@@ -1393,7 +1413,9 @@ func _tick_enemies(delta: float) -> void:
 		if hpl:
 			var chain := int(e.get_meta("combo_count", 0))
 			var ctag := "  SYNC x%d" % chain if chain > 1 and float(e.get_meta("combo_t", 0.0)) > 0.0 else ""
-			var attack_tag := "  WINDUP!" if attack_windup > 0.0 else ""
+			var special_state := String(e.get_meta("special_state","idle"))
+			var special_names := {"aim":"  ACID AIM!","windup":"  RAM WINDUP!","charge":"  CHARGING!"}
+			var attack_tag := String(special_names.get(special_state,"  WINDUP!" if attack_windup > 0.0 else ""))
 			var control_tag := ("  PUPPET OVERDRIVE!" if big > 0.0 else "  PUPPET!") if controlled > 0.0 else ("  GOO-SLOWED" if goo_slow > 0.0 else "")
 			var spore_count := int(e.get_meta("spore_stacks", 0))
 			var spore_tag := "  SPORE x%d" % spore_count if spore_count > 0 else ""
@@ -1403,9 +1425,15 @@ func _tick_enemies(delta: float) -> void:
 			var kind_name := String(e.get_meta("display_name", e.get_meta("kind")))
 			var wild_tag := "  WILD" if bool(e.get_meta("wild_spawn", false)) else ""
 			hpl.text = "%s%s%s%s%s%s%s%s\n%d/%d" % [kind_name, wild_tag, ctag, attack_tag, control_tag, spore_tag, mark_tag, bone_tag, int(e.get_meta("hp")), int(e.get_meta("max_hp"))]
-			hpl.modulate = Color("#b989ff") if controlled > 0.0 else ((Color(1.0,0.82,0.35) if kind_name == "PLATELET" else (Color(0.86,0.55,1.0) if kind_name == "HAIRBALL" else Color(0.65,1.0,0.48))) if attack_windup > 0.0 else Color.WHITE)
+			if controlled > 0.0: hpl.modulate = Color("#b989ff")
+			elif special_state in ["windup","charge"]: hpl.modulate = Color("#ffb064")
+			elif special_state == "aim": hpl.modulate = Color("#d9ff5e")
+			elif attack_windup > 0.0: hpl.modulate = Color(1.0,0.82,0.35) if kind_name == "PLATELET" else (Color(0.86,0.55,1.0) if kind_name == "HAIRBALL" else Color(0.65,1.0,0.48))
+			else: hpl.modulate = Color.WHITE
 		e.scale = Vector3.ONE * (1.45 if big > 0.0 else 1.0)
 		var slow := 0.35 if goo_slow > 0.0 else (0.45 if _on_fungus(e.global_position) else 1.0)
+		var attack_mode := String(e.get_meta("attack_mode","melee"))
+		var special := String(e.get_meta("special_state","idle"))
 		var control_target: CharacterBody3D = _control_target_for(e) if controlled > 0.0 else null
 		if stun <= 0.0 and pinned <= 0.0 and attack_windup <= 0.0:
 			var has_chase_target := true
@@ -1426,7 +1454,18 @@ func _tick_enemies(delta: float) -> void:
 				chase_target = catnip_beacon.global_position
 			var off := chase_target - e.global_position
 			off.y = 0.0
-			if has_chase_target and off.length() > 0.7:
+			if controlled <= 0.0 and special == "charge":
+				var forced: Vector3 = e.get_meta("charge_dir",Vector3.FORWARD)*18.5
+				e.velocity.x = forced.x
+				e.velocity.z = forced.z
+			elif controlled <= 0.0 and attack_mode == "ranged" and engaged and off.length() < 9.5:
+				var tangent := Vector3(-off.z,0.0,off.x).normalized()
+				var orbit_sign := -1.0 if int(e.get_instance_id())%2==0 else 1.0
+				var retreat := -off.normalized()*2.2 if off.length()<6.0 else Vector3.ZERO
+				var v := (tangent*orbit_sign*2.0+retreat)*slow
+				e.velocity.x = move_toward(e.velocity.x,v.x,10.0*delta)
+				e.velocity.z = move_toward(e.velocity.z,v.z,10.0*delta)
+			elif has_chase_target and off.length() > 0.7:
 				var v := off.normalized() * float(e.get_meta("speed")) * slow
 				e.velocity.x = move_toward(e.velocity.x, v.x, 12.0 * delta)
 				e.velocity.z = move_toward(e.velocity.z, v.z, 12.0 * delta)
@@ -1477,7 +1516,7 @@ func _tick_enemies(delta: float) -> void:
 				hit_shake = maxf(hit_shake, 0.08)
 				SkillVFX.spawn_dodge_success(self, player.global_position, ROLE_COLORS[role_index])
 				_toast("PERFECT DODGE", ROLE_COLORS[role_index], 1.0)
-		elif controlled <= 0.0 and old_attack <= 0.0 and attack_cd <= 0.0 and dist_to_player < 1.65 and stun <= 0.0 and pinned <= 0.0:
+		elif controlled <= 0.0 and attack_mode not in ["ranged","charge"] and old_attack <= 0.0 and attack_cd <= 0.0 and dist_to_player < 1.65 and stun <= 0.0 and pinned <= 0.0:
 			attack_windup = 0.36
 			attack_cd = 1.15
 			EnemyFactory.spawn_attack_telegraph(self, String(e.get_meta("kind")), e.global_position)
@@ -1488,6 +1527,8 @@ func _tick_enemies(delta: float) -> void:
 		e.set_meta("attack_windup", attack_windup)
 		e.set_meta("attack_cd", attack_cd)
 		var attack_pose: float = 1.0 - clampf(attack_windup / 0.36, 0.0, 1.0) if old_attack > 0.0 else 0.0
+		if special in ["aim","windup"]: attack_pose = 1.0-clampf(float(e.get_meta("special_time",0.0))/0.72,0.0,1.0)
+		elif special=="charge": attack_pose = 1.0
 		var impact_freeze := maxf(0.0,float(e.get_meta("impact_freeze",0.0))-delta)
 		e.set_meta("impact_freeze",impact_freeze)
 		if impact_freeze <= 0.0:

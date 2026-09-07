@@ -25,6 +25,8 @@ func build(host) -> void:
 	var keep: Array[Node3D] = [game.player,game.entrance,game.acid_valve,game.shop_root]
 	for clue in game.clue_nodes: keep.append(clue)
 	for enemy in game.enemies: keep.append(enemy)
+	if is_instance_valid(game.enemy_ecology):
+		for prop in game.enemy_ecology.dressing_props: keep.append(prop)
 	var prop_bases: Array[Basis] = []
 	for prop in game.organ_props: prop_bases.append(prop.global_basis)
 	var labels: Array = []
