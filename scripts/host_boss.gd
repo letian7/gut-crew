@@ -496,10 +496,8 @@ func _hurt_player(amount: float) -> void:
 	if game.invuln > 0.0 or game.ko_time > 0.0 or game.hp <= 0.0:
 		return
 	game.hp = maxf(0.0,game.hp-amount)
-	game.impact_feedback.report_hurt(target.global_position)
+	game._player_hurt_feedback(amount, target.global_position, true)
 	game.invuln = 0.85
-	game.anim_hurt_time = 0.3
-	game.damage_shake = 0.2
 	strikes += 1
 
 func apply_hit(amount: float, control: float, role: int) -> void:

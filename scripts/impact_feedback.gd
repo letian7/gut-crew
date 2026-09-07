@@ -2,6 +2,7 @@ extends Control
 var game
 var hit_time := 0.0
 var hurt_time := 0.0
+var hurt_strength := 0.0
 var recoil := 0.0
 var kill_hit := false
 var source := Vector3.ZERO
@@ -61,17 +62,18 @@ func report_hit(amount: float, killed: bool) -> void:
 		sound_lock = 0.08
 	queue_redraw()
 
-func report_hurt(origin: Vector3, has_direction := true) -> void:
+func report_hurt(origin: Vector3, has_direction := true, amount := 10.0) -> void:
 	hurt_events += 1
 	last_hp = game.hp
 	source = origin
 	directional = has_direction
+	hurt_strength = maxf(hurt_strength, clampf(amount / 22.0, 0.28, 1.0))
 	if hurt_time <= 0.0 and audio_enabled: hurt_player.play()
-	hurt_time = 0.55
+	hurt_time = maxf(hurt_time, 0.46 + hurt_strength * 0.22)
 	queue_redraw()
 
 func tick(delta: float) -> void:
-	visible = game.role_selected and not game.game_paused and not game._cinematic_locked()
+	visible = game.role_selected and not game.game_paused and not game.inventory_open and not game._cinematic_locked()
 	if not visible:
 		hit_player.stop()
 		hurt_player.stop()
@@ -83,10 +85,11 @@ func tick(delta: float) -> void:
 			recoil = 0.0
 			last_hp = game.hp
 		return
-	if game.hp < last_hp: report_hurt(Vector3.ZERO,false)
+	if game.hp < last_hp: report_hurt(Vector3.ZERO, false, last_hp - game.hp)
 	last_hp = game.hp
 	hit_time = maxf(0.0,hit_time-delta)
 	hurt_time = maxf(0.0,hurt_time-delta)
+	if hurt_time <= 0.0: hurt_strength = move_toward(hurt_strength, 0.0, delta * 4.0)
 	sound_lock = maxf(0.0,sound_lock-delta)
 	recoil = move_toward(recoil,0.0,delta*0.28)
 	game.camera_1p.v_offset = recoil
@@ -114,9 +117,23 @@ func _draw() -> void:
 			for y in [-1.0,1.0]:
 				var axis := Vector2(x,y).normalized()
 				draw_line(center+axis*gap,center+axis*(gap+7.0),color,3.0 if kill_hit else 2.0,true)
+	var screen := get_viewport_rect().size
+	var low_hp := clampf((36.0 - game.hp) / 36.0, 0.0, 1.0)
+	var low_pulse := low_hp * (0.08 + (sin(Time.get_ticks_msec() * 0.006) * 0.5 + 0.5) * 0.09)
+	var impact_alpha := clampf(hurt_time * 0.62 * hurt_strength, 0.0, 0.42)
+	var edge_alpha := maxf(low_pulse, impact_alpha)
+	if edge_alpha > 0.001:
+		for i in range(4):
+			var width := 18.0 + i * 12.0
+			var alpha := edge_alpha * (1.0 - i * 0.19)
+			var edge := Color(0.72, 0.02, 0.06, alpha)
+			draw_rect(Rect2(Vector2(0, i * 8), Vector2(screen.x, width)), edge)
+			draw_rect(Rect2(Vector2(0, screen.y - width - i * 8), Vector2(screen.x, width)), edge)
+			draw_rect(Rect2(Vector2(i * 8, 0), Vector2(width, screen.y)), edge)
+			draw_rect(Rect2(Vector2(screen.x - width - i * 8, 0), Vector2(width, screen.y)), edge)
 	if hurt_time > 0.0 and directional:
 		var delta: Vector3 = source-game.player.position
 		# World left projects screen-left; only the indicator rotates, never the aim.
 		var angle: float = -atan2(-delta.x,-delta.z)+game.yaw-PI*0.5
-		var color := Color(1.0,0.35,0.31,minf(0.9,hurt_time*3.0))
-		draw_arc(center,48,angle-0.30,angle+0.30,16,color,4.0,true)
+		var color := Color(1.0,0.35,0.31,minf(0.95,hurt_time*3.0*maxf(0.45,hurt_strength)))
+		draw_arc(center,52,angle-0.34,angle+0.34,18,color,5.0,true)

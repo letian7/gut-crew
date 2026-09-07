@@ -34,6 +34,9 @@ var spring_arm: SpringArm3D
 var body_mesh: MeshInstance3D
 var head_mesh: MeshInstance3D
 var character_visual: Node3D
+var first_person_viewmodel: Node3D
+var inventory_ui: CanvasLayer
+var inventory_open := false
 var map_visual_root: Node3D
 var world_expansion_root: Node3D
 var stomach_anatomy_root: Node3D
@@ -55,7 +58,7 @@ var help_label: Label
 var view_label: Label
 var crosshair: Label
 var role_index := 0
-var first_person := false
+var first_person := true
 var yaw := 0.0
 var pitch := -0.18
 var dodge_time := 0.0
@@ -219,6 +222,12 @@ func _ready() -> void:
 	anatomy_route = preload("res://scripts/anatomy_route.gd").new()
 	add_child(anatomy_route)
 	anatomy_route.build(self)
+	first_person_viewmodel = preload("res://scripts/first_person_viewmodel.gd").new()
+	camera_1p.add_child(first_person_viewmodel)
+	first_person_viewmodel.build(self)
+	inventory_ui = preload("res://scripts/inventory_ui.gd").new()
+	add_child(inventory_ui)
+	inventory_ui.build(self)
 
 func role_upgrade_level(index := -1) -> int:
 	if not is_instance_valid(clinic_system): return 0
@@ -530,8 +539,10 @@ func _build_player() -> void:
 	camera_1p = Camera3D.new()
 	camera_1p.position = Vector3(0, 0.28, -0.18)
 	camera_1p.fov = 72.0
+	camera_1p.near = 0.03
 	camera_pivot.add_child(camera_1p)
-	camera_3p.current = true
+	camera_1p.current = true
+	camera_3p.current = false
 	camera_pivot.rotation.x = pitch
 
 func _build_hud() -> void:
@@ -558,7 +569,7 @@ func _build_hud() -> void:
 	layer.add_child(view_label)
 	help_label = Label.new()
 	help_label.position = Vector2(18, 650)
-	help_label.text = "WASD move | LMB primary | RMB control | Q/E skills | F interact | Ctrl dodge | Tab view | Esc menu"
+	help_label.text = "WASD move | LMB primary / RMB secondary | Q/E skills | F interact | Ctrl dodge | Tab inventory | V view | Esc menu"
 	help_label.add_theme_font_size_override("font_size", 16)
 	layer.add_child(help_label)
 	crosshair = Label.new()
@@ -670,6 +681,7 @@ func _set_role(index: int) -> void:
 	body_mesh = role_parts["body"] as MeshInstance3D
 	head_mesh = role_parts["head"] as MeshInstance3D
 	character_visual.visible = not first_person
+	if is_instance_valid(first_person_viewmodel): first_person_viewmodel.rebuild(role_index)
 	if is_instance_valid(clinic_system): clinic_system.decorate_role()
 	_update_hud()
 
@@ -694,10 +706,11 @@ func _update_hud() -> void:
 	view_label.text = "FIRST PERSON" if first_person else "THIRD PERSON"
 func _process(delta: float) -> void:
 	living_time += delta
+	_tick_camera_trauma(delta)
 	FrontendUI.animate(front_ui, living_time)
 	_tick_toast(delta)
 	_tick_story(delta)
-	if not role_selected or game_paused:
+	if not role_selected or game_paused or inventory_open:
 		return
 	if mission_phase == "escape":
 		escape_finale.tick(delta)
@@ -759,11 +772,25 @@ func _process(delta: float) -> void:
 	_update_target_ui()
 	_tick_zones(delta)
 	_animate_role_model(delta)
+
+func _tick_camera_trauma(delta: float) -> void:
+	if not is_instance_valid(camera_pivot): return
 	hit_shake = maxf(0.0, hit_shake - delta * 2.8)
-	damage_shake = maxf(0.0, damage_shake - delta * 1.9)
-	var shake := hit_shake + damage_shake
-	camera_pivot.position.x = sin(living_time * 63.0) * shake * 0.14
-	camera_pivot.position.z = cos(living_time * 51.0) * shake * 0.08
+	damage_shake = maxf(0.0, damage_shake - delta * 1.55)
+	var trauma := clampf(hit_shake + damage_shake, 0.0, 1.0)
+	if game_paused or inventory_open or not role_selected: trauma = 0.0
+	var squared := trauma * trauma
+	camera_pivot.position.x = sin(living_time * 67.0) * squared * 0.31
+	camera_pivot.position.z = cos(living_time * 53.0) * squared * 0.18
+	camera_pivot.rotation.z = sin(living_time * 71.0 + 0.7) * squared * 0.032
+	if is_instance_valid(camera_1p): camera_1p.h_offset = cos(living_time * 61.0) * squared * 0.045
+	if is_instance_valid(camera_3p): camera_3p.h_offset = cos(living_time * 61.0) * squared * 0.025
+
+func _player_hurt_feedback(amount: float, origin := Vector3.ZERO, directional := true) -> void:
+	var strength := clampf(amount / 24.0, 0.22, 0.82)
+	damage_shake = maxf(damage_shake, strength)
+	anim_hurt_time = maxf(anim_hurt_time, 0.24 + strength * 0.12)
+	if is_instance_valid(impact_feedback): impact_feedback.report_hurt(origin, directional, amount)
 
 func _part(name: String) -> Node3D:
 	return character_visual.get_node_or_null(name) as Node3D if character_visual else null
@@ -969,7 +996,7 @@ func _physics_process(delta: float) -> void:
 		player.velocity = Vector3.ZERO
 		_update_hud()
 		return
-	if not role_selected or game_paused:
+	if not role_selected or game_paused or inventory_open:
 		player.velocity = Vector3.ZERO
 		_update_hud()
 		return
@@ -1066,7 +1093,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				KEY_3: _select_role(2)
 				KEY_4: _select_role(3)
 		return
-	if game_paused or _cinematic_locked():
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_TAB:
+		if is_instance_valid(inventory_ui): inventory_ui.toggle()
+		get_viewport().set_input_as_handled()
+		return
+	if inventory_open or game_paused or _cinematic_locked():
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * 0.0025 * mouse_sensitivity
@@ -1094,7 +1125,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			JOY_BUTTON_DPAD_LEFT: _select_role(3)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
-			KEY_TAB: _toggle_view()
+			KEY_V: _toggle_view()
 			KEY_1: _select_role(0)
 			KEY_2: _select_role(1)
 			KEY_3: _select_role(2)
@@ -1115,6 +1146,8 @@ func _toggle_view() -> void:
 	camera_1p.current = first_person
 	camera_3p.current = not first_person
 	character_visual.visible = not first_person
+	if is_instance_valid(first_person_viewmodel): first_person_viewmodel.refresh_visibility()
+	_update_hud()
 func _cast_skill(slot: int) -> void:
 	if _cinematic_locked(): return
 	if not role_selected or game_paused or mission_phase == "win": return
@@ -1417,11 +1450,10 @@ func _tick_enemies(delta: float) -> void:
 		var dist_to_player: float = e.global_position.distance_to(player.global_position)
 		if controlled <= 0.0 and old_attack > 0.0 and attack_windup <= 0.0:
 			if dist_to_player < 1.45 and invuln <= 0.0:
-				hp = maxf(0.0, hp - float(e.get_meta("contact_damage")))
-				impact_feedback.report_hurt(e.global_position)
+				var received_damage := float(e.get_meta("contact_damage"))
+				hp = maxf(0.0, hp - received_damage)
+				_player_hurt_feedback(received_damage, e.global_position, true)
 				invuln = 0.85
-				damage_shake = 0.25
-				anim_hurt_time = 0.26
 				player.velocity += (player.global_position - e.global_position).normalized() * 5.8
 				var biome_trait := String(e.get_meta("biome_trait", ""))
 				match biome_trait:
@@ -2610,6 +2642,9 @@ func _confirm_quit() -> void:
 	get_tree().quit(0)
 
 func _handle_escape() -> void:
+	if inventory_open:
+		if is_instance_valid(inventory_ui): inventory_ui.close_inventory()
+		return
 	if role_panel and role_panel.visible:
 		role_panel.visible = false
 		_show_front("levels")
