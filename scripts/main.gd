@@ -173,6 +173,7 @@ var world_layout: Node
 var tactical_map: Control
 var impact_feedback: Control
 var clinic_system: Node3D
+var anatomy_route: Node3D
 static var reload_front_target := "main"
 func _ready() -> void:
 	_build_environment()
@@ -215,6 +216,9 @@ func _ready() -> void:
 	clinic_system = preload("res://scripts/clinic_system.gd").new()
 	add_child(clinic_system)
 	clinic_system.build(self)
+	anatomy_route = preload("res://scripts/anatomy_route.gd").new()
+	add_child(anatomy_route)
+	anatomy_route.build(self)
 
 func role_upgrade_level(index := -1) -> int:
 	if not is_instance_valid(clinic_system): return 0
@@ -1748,8 +1752,8 @@ func _build_mission() -> void:
 	entrance.get_node("Art19Model").position.y = 0.40
 	cap_label.position.y = 3.35
 
-	var clue_positions = [Vector3(-18.0, 0.35, -2.5), Vector3(0.0, 0.35, -11.0), Vector3(18.0, 0.35, 2.5)]
-	var clue_names = ["UNBROKEN TOY SHELL", "HEART-CALMING SIGNAL", "PLATELET CRADLE"]
+	var clue_positions = [Vector3(-18.0, 0.55, 8.8), Vector3(0.0, 0.50, -11.2), Vector3(18.0, 0.55, -8.7)]
+	var clue_names = ["第一关 · 贲门毛球样本", "第二关 · 幽门痉挛信号", "第三关 · 十二指肠异物痕迹"]
 	for i in range(3):
 		var root := Node3D.new()
 		root.position = clue_positions[i]
@@ -1923,6 +1927,7 @@ func _update_mission(delta: float) -> void:
 	if mission_phase == "diagnose":
 		for i in range(clue_nodes.size()):
 			if clue_done[i]: continue
+			if is_instance_valid(anatomy_route) and not anatomy_route.can_use_clue(i): continue
 			if player.global_position.distance_to(clue_nodes[i].global_position) < 1.9:
 				prompt = "HOLD F  DIAGNOSE"
 				action = "clue"
@@ -1975,7 +1980,7 @@ func _update_mission(delta: float) -> void:
 	if action == "":
 		var shop_index: int = _nearest_shop_item()
 		if shop_index >= 0:
-			prompt = "HOLD F  BUY %s  %dC" % [ShopFactory.ITEM_NAMES[shop_index], ShopFactory.ITEM_COSTS[shop_index]]
+			prompt = "长按 F 购买：%s  %d C · %s" % [ShopFactory.ITEM_DISPLAY_NAMES[shop_index],ShopFactory.ITEM_COSTS[shop_index],ShopFactory.ITEM_DESCRIPTIONS[shop_index]]
 			action = "shop"
 			action_index = shop_index
 			duration = 0.35
@@ -2112,7 +2117,7 @@ func _complete_clue(index: int) -> void:
 
 func _spawn_mission_mouse() -> void:
 	if is_instance_valid(mouse_target): return
-	_spawn_enemy("TOY_MOUSE", world_point(Vector3(17.2, 0.25, -2.0)), Color("#9cf26b"), 9999.0, 6.6)
+	_spawn_enemy("TOY_MOUSE", world_point(Vector3(18.0, 0.55, -8.7)), Color("#9cf26b"), 9999.0, 6.6)
 	mouse_target = enemies[-1]
 	mouse_target.set_meta("contact_damage", 0.0)
 	mouse_target.set_meta("fake_phase", 0.0)
@@ -2405,7 +2410,7 @@ func _buy_item(index: int) -> bool:
 	if index < 0 or index >= ShopFactory.ITEM_COSTS.size(): return false
 	var cost: int = ShopFactory.ITEM_COSTS[index]
 	if credits < cost:
-		_toast("NOT ENOUGH CREDITS", Color("#ff8d9a"), 1.6)
+		_toast("细菌老板：钱不够！先去救人、清洁或钓宝。",Color("#ff8d9a"),2.2)
 		return false
 	credits -= cost
 	purchases += 1
@@ -2418,15 +2423,15 @@ func _buy_item(index: int) -> bool:
 	match index:
 		0:
 			acid_umbrella_time = maxf(acid_umbrella_time, 18.0)
-			_toast("ACID UMBRELLA: acid -82%, current push +40%", Color("#ffe36b"), 2.8)
+			_toast("细菌老板：胃酸伞开张！18秒胃酸伤害 -82%，水流冲击减弱。",Color("#ffe36b"),3.0)
 		1:
 			plasma_soda_time = maxf(plasma_soda_time, 16.0)
-			_toast("PLASMA SODA: speed +28%, super jump, cooldown x1.55", Color("#64e5ff"), 2.7)
+			_toast("细菌老板：血浆汽水！16秒速度 +28%、超级跳、冷却恢复 x1.55。",Color("#64e5ff"),3.0)
 		2:
 			catnip_time = 14.0
 			if is_instance_valid(catnip_beacon): catnip_beacon.queue_free()
 			catnip_beacon = ShopFactory.spawn_catnip(self, player.global_position + _forward()*1.8)
-			_toast("CATNIP BEACON: lure trouble here", Color("#d985ff"), 2.5)
+			_toast("细菌老板：猫薄荷已投放！附近怪物会被吸引14秒。",Color("#d985ff"),2.8)
 		3:
 			_apply_mystery_capsule()
 	_update_hud()

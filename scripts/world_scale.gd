@@ -138,7 +138,7 @@ func _process(_delta: float) -> void:
 			if distance < nearest:
 				nearest = distance
 				target = game.clue_nodes[i].position
-				title = ["西侧异物区 · 诊断线索","北侧神经区 · 诊断线索","东侧血小板区 · 诊断线索"][i]
+				title = ["第一关 · 贲门黏膜室","第二关 · 幽门窦","第三关 · 十二指肠弯道"][i]
 	elif game.mission_phase == "chase" and is_instance_valid(game.mouse_target):
 		target = game.mouse_target.position
 		title = "电子老鼠 · 靠近后使用控制技能"

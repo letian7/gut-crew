@@ -3,10 +3,10 @@ extends Node3D
 const Art = preload("res://scripts/organ_world_factory.gd")
 const EXTENT := Vector2(26.0,18.0)
 const ROOMS = [
-	{"id":"forest","title":"毛球森林 / HAIRBALL FOREST","rect":Rect2(9.8,5.4,10.4,8.0),"door":14.5,"north":true,"color":Color("#755c70"),"center":Vector3(14.5,0,9.2),"half":Vector2(4.0,2.6),"height":0.555},
-	{"id":"gut","title":"肠道迷宫 / INTESTINAL MAZE","rect":Rect2(12.8,-13.3,10.7,8.8),"door":18.0,"north":false,"color":Color("#915179"),"center":Vector3(18,0,-8.7),"half":Vector2(4.1,3.4),"height":0.48},
-	{"id":"lung","title":"肺泡空间 / LUNG CHAMBER","rect":Rect2(-23.7,4.9,11.3,8.4),"door":-18.0,"north":true,"color":Color("#735e8c"),"center":Vector3(-18,0,8.8),"half":Vector2(4,3.2),"height":0.44},
-	{"id":"nerve","title":"神经高速路 / NERVE HIGHWAY","rect":Rect2(-8.9,-15.1,17.8,7.7),"door":0.0,"north":false,"color":Color("#534167"),"center":Vector3(0,0,-11.2),"half":Vector2(7.9,2.4),"height":0.40}
+	{"id":"forest","title":"胃底毛球滤区 / FUNDUS FILTER","rect":Rect2(9.8,5.4,10.4,8.0),"door":14.5,"north":true,"color":Color("#755c70"),"center":Vector3(14.5,0,9.2),"half":Vector2(4.0,2.6),"height":0.555},
+	{"id":"gut","title":"十二指肠弯道 / DUODENAL LOOP","rect":Rect2(12.8,-13.3,10.7,8.8),"door":18.0,"north":false,"color":Color("#915179"),"center":Vector3(18,0,-8.7),"half":Vector2(4.1,3.4),"height":0.48},
+	{"id":"lung","title":"贲门黏膜室 / CARDIA CHAMBER","rect":Rect2(-23.7,4.9,11.3,8.4),"door":-18.0,"north":true,"color":Color("#735e8c"),"center":Vector3(-18,0,8.8),"half":Vector2(4,3.2),"height":0.44},
+	{"id":"nerve","title":"幽门窦 / PYLORIC ANTRUM","rect":Rect2(-8.9,-15.1,17.8,7.7),"door":0.0,"north":false,"color":Color("#534167"),"center":Vector3(0,0,-11.2),"half":Vector2(7.9,2.4),"height":0.40}
 ]
 const LINKS = [
 	{"id":"forest","a":Vector3(14.5,0.32,3.0),"b":Vector3(14.5,0.59,8.0),"color":Color("#a69b77")},
@@ -302,12 +302,12 @@ func enter_clinic() -> void:
 func zone_at(point: Vector3) -> String:
 	point = game.authored_point(point)
 	if is_instance_valid(game.mouth_intro) and game.mouth_intro.active:
-		return "猫嘴 · 舌面" if point.z > 50 else "咽喉 · 下行通道"
+		return "猫口腔 · 舌背" if point.z > 50 else "咽部 · 食道下行通道"
 	for room in ROOMS:
 		var rect: Rect2 = room["rect"]
 		if rect.has_point(Vector2(point.x,point.z)):
 			return room["title"]
-	return "胃部中枢 / STOMACH HUB"
+	return "胃体救治中枢 / GASTRIC BODY"
 
 func tick(delta: float) -> void:
 	if not game.role_selected or game.game_paused: return
