@@ -613,28 +613,140 @@ static func spawn_hook_chain(parent: Node3D, origin: Vector3, target: Vector3, p
 	tw.tween_property(root, "scale", Vector3.ONE * 0.05, 0.16)
 	tw.tween_callback(root.queue_free)
 
+static func spawn_hook_projectile(parent: Node3D, origin: Vector3, power: float) -> Node3D:
+	var root := Node3D.new()
+	root.name = "BoneHookProjectile33"
+	parent.add_child(root)
+	root.global_position = origin
+	var link_count := 12 + int(power * 6.0)
+	for i in range(link_count):
+		var link := cylinder(root, "PhysicalChainLink%02d" % i, Vector3.ZERO, Vector3(0, 0, -0.02), 0.034 + power * 0.012, Color("#d7c5aa"), 1.0, 0.16)
+		link.set_meta("chain_index", i)
+		link.set_meta("chain_count", link_count)
+		link.set_meta("chain_radius", 0.034 + power * 0.012)
+	var head := Node3D.new()
+	head.name = "HookHead"
+	root.add_child(head)
+	var bone := Color("#ead9bb")
+	var dark_bone := Color("#b69976")
+	sphere(head, "HookSocket", Vector3.ZERO, Vector3(0.28, 0.24, 0.24), dark_bone, 1.0, 0.12)
+	torus(head, "HookJawRing", Vector3(0, 0, -0.10), Vector3(0.31, 0.31, 0.22), bone, 1.0, 0.16).rotation.x = PI * 0.5
+	cylinder(head, "HookFangLeft", Vector3(-0.23, 0.02, -0.04), Vector3(-0.08, -0.24, -0.38), 0.065, bone, 1.0, 0.12)
+	cylinder(head, "HookFangRight", Vector3(0.23, 0.02, -0.04), Vector3(0.08, -0.24, -0.38), 0.065, bone, 1.0, 0.12)
+	sphere(head, "HookToothLeft", Vector3(-0.08, -0.24, -0.38), Vector3(0.10, 0.15, 0.10), Color("#fff3dc"), 1.0, 0.18)
+	sphere(head, "HookToothRight", Vector3(0.08, -0.24, -0.38), Vector3(0.10, 0.15, 0.10), Color("#fff3dc"), 1.0, 0.18)
+	root.set_meta("power", power)
+	return root
+
+static func update_hook_projectile(root: Node3D, origin: Vector3, tip: Vector3, tension: float, retracting: bool) -> void:
+	if not is_instance_valid(root): return
+	root.global_position = origin
+	var local_tip := root.to_local(tip)
+	var head := root.get_node_or_null("HookHead") as Node3D
+	if head:
+		head.position = local_tip
+		head.rotation.z += 0.17 if retracting else 0.29
+		head.scale = Vector3.ONE * (1.08 if retracting else 1.0)
+	var links := root.find_children("PhysicalChainLink*", "MeshInstance3D", false, false)
+	var link_count := links.size()
+	for i in range(link_count):
+		var t0 := float(i) / float(maxi(1, link_count))
+		var t1 := float(i + 1) / float(maxi(1, link_count))
+		var sag := 0.30 * (1.0 - clampf(tension, 0.0, 1.0))
+		var p0 := local_tip * t0 + Vector3.DOWN * sin(t0 * PI) * sag
+		var p1 := local_tip * t1 + Vector3.DOWN * sin(t1 * PI) * sag
+		var link := links[i] as MeshInstance3D
+		var direction := p1 - p0
+		var length := direction.length()
+		if length <= 0.0001:
+			link.scale = Vector3.ZERO
+			continue
+		var radius := float(link.get_meta("chain_radius", 0.04))
+		link.position = (p0 + p1) * 0.5
+		link.basis = Basis(Quaternion(Vector3.UP, direction.normalized()))
+		link.scale = Vector3(radius * 2.0, length, radius * 2.0)
+
+static func spawn_hook_bite(parent: Node3D, pos: Vector3, power: float) -> void:
+	var root := Node3D.new()
+	root.name = "BoneHookBite33"
+	parent.add_child(root)
+	for side in [-1.0, 1.0]:
+		var fang := cylinder(root, "BitingFang", pos + Vector3(float(side) * 0.42, 0.28, 0), pos + Vector3(float(side) * 0.10, -0.10, 0), 0.07 + power * 0.018, Color("#fff0d2"), 1.0, 0.35)
+		_fade_free(fang, 0.20, Vector3.ONE * 0.12)
+	var ring := torus(root, "HookBiteRing", pos, Vector3.ONE * 0.14, Color("#e4ae65"), 0.82, 1.2)
+	_fade_free(ring, 0.22, Vector3.ONE * (0.62 + power * 0.24))
+	parent.get_tree().create_timer(0.28).timeout.connect(root.queue_free)
+
 static func spawn_bone_wall(parent: Node3D, pos: Vector3, yaw: float, preview: bool) -> StaticBody3D:
 	var wall := StaticBody3D.new()
 	wall.name = "BoneWallPreview32" if preview else "BoneWall32"
 	parent.add_child(wall)
 	wall.global_position = pos
 	wall.rotation.y = yaw
-	for x in range(-3, 4):
-		var height := 1.75 + (1.0 - absf(float(x)) / 4.0) * 0.75
-		var pillar := cylinder(wall, "WallRib", Vector3(float(x) * 0.38, 0.05, 0), Vector3(float(x) * 0.38, height, 0), 0.15, Color("#d9cdb9") if preview else Color("#f4ead4"), 0.28 if preview else 1.0, 0.55 if preview else 1.2)
-		pillar.rotation.z = sin(float(x) * 1.7) * 0.035
-	for y in [0.55, 1.25, 1.90]:
-		cylinder(wall, "WallSpine", Vector3(-1.35, y, 0.04), Vector3(1.35, y, 0.04), 0.085, Color("#ffca7a") if not preview else Color("#ead8bf"), 0.30 if preview else 0.96, 0.8)
+	var bone := Color("#cbbda6") if preview else Color("#e3d2b5")
+	var joint := Color("#d9c7aa") if preview else Color("#f0dfc1")
+	var cartilage := Color("#a88787") if preview else Color("#b66f76")
+	var alpha := 0.28 if preview else 1.0
+	var glow := 0.18 if preview else 0.10
+	var model_parts := 0
+	# A central sternum with paired, curved ribs reads as anatomy instead of a fence.
+	var sternum_points: Array[Vector3] = []
+	for level in range(6):
+		sternum_points.append(Vector3(0, 0.22 + float(level) * 0.42, 0.06 + sin(float(level) * 1.4) * 0.025))
+		sphere(wall, "SternumJoint%02d" % level, sternum_points[level], Vector3(0.25, 0.23, 0.20), joint, alpha, glow)
+		model_parts += 1
+		if level > 0:
+			cylinder(wall, "SternumSegment%02d" % level, sternum_points[level - 1], sternum_points[level], 0.13, bone, alpha, glow)
+			model_parts += 1
+	for level in range(5):
+		var rib_y := 0.42 + float(level) * 0.41
+		var spread := 1.47 - absf(float(level) - 2.0) * 0.07
+		for side_value in [-1.0, 1.0]:
+			var side := float(side_value)
+			var p0 := Vector3(side * 0.08, rib_y + 0.05, 0.10)
+			var p1 := Vector3(side * 0.50, rib_y + 0.11, 0.18)
+			var p2 := Vector3(side * 1.02, rib_y + 0.02, 0.30)
+			var p3 := Vector3(side * spread, rib_y - 0.20, 0.07)
+			var side_name := "L" if side < 0.0 else "R"
+			cylinder(wall, "RibInner%s%d" % [side_name, level], p0, p1, 0.105, bone, alpha, glow)
+			cylinder(wall, "RibMiddle%s%d" % [side_name, level], p1, p2, 0.115, bone, alpha, glow)
+			cylinder(wall, "RibOuter%s%d" % [side_name, level], p2, p3, 0.095, bone, alpha, glow)
+			sphere(wall, "RibRoot%s%d" % [side_name, level], p0, Vector3(0.22, 0.20, 0.18), joint, alpha, glow)
+			sphere(wall, "RibElbow%s%d" % [side_name, level], p1, Vector3(0.20, 0.19, 0.18), joint, alpha, glow)
+			sphere(wall, "RibKnuckle%s%d" % [side_name, level], p2, Vector3(0.21, 0.20, 0.19), joint, alpha, glow)
+			sphere(wall, "RibTip%s%d" % [side_name, level], p3, Vector3(0.25, 0.18, 0.21), joint, alpha, glow)
+			model_parts += 7
+	for level in range(4):
+		for side_value in [-1.0, 1.0]:
+			var side := float(side_value)
+			var membrane := sphere(wall, "CartilageMembrane%s%d" % ["L" if side < 0.0 else "R", level], Vector3(side * 0.78, 0.64 + float(level) * 0.41, 0.23), Vector3(0.78, 0.30, 0.09), cartilage, 0.11 if preview else 0.30, 0.03)
+			membrane.rotation.z = side * 0.10
+			model_parts += 1
 	var collision := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(3.0, 2.55, 0.38)
+	shape.size = Vector3(3.25, 2.65, 0.48)
 	collision.shape = shape
-	collision.position.y = 1.27
+	collision.position.y = 1.30
 	collision.disabled = preview
 	wall.add_child(collision)
 	wall.set_meta("preview", preview)
 	wall.set_meta("ttl", 5.0)
+	wall.set_meta("model_parts", model_parts)
 	return wall
+
+static func spawn_wall_push_trail(parent: Node3D, start: Vector3, finish: Vector3) -> void:
+	var root := Node3D.new()
+	root.name = "BoneWallPushTrail33"
+	parent.add_child(root)
+	for i in range(10):
+		var t := float(i) / 9.0
+		var p := start.lerp(finish, t) + Vector3.UP * (0.12 + float(i % 3) * 0.08)
+		var dust := sphere(root, "RibPushDust", p, Vector3(0.16, 0.09, 0.22), Color("#c89577"), 0.42, 0.10)
+		var tw := parent.create_tween()
+		tw.tween_interval(t * 0.24)
+		tw.tween_property(dust, "scale", Vector3(0.42, 0.10, 0.52), 0.13)
+		tw.tween_property(dust, "scale", Vector3.ZERO, 0.12)
+	parent.get_tree().create_timer(0.58).timeout.connect(root.queue_free)
 
 static func spawn_bone_armor(parent: Node3D, pos: Vector3) -> void:
 	var root := Node3D.new()

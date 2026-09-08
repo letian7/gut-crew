@@ -49,7 +49,7 @@ func _init() -> void:
 	assert(game.bone_projectiles.size()>=6)
 	assert(game.get_node_or_null("BoneHammerImpact32")!=null)
 
-	# RMB charge locks a target and pulls it into point-blank hammer range.
+	# RMB charge launches a physical hook, bites, then reels the target into hammer range.
 	reset_enemy(target,Vector3(0,1.15,-3.5))
 	game.secondary_attack_cd=0.0
 	game._secondary_pressed()
@@ -57,9 +57,16 @@ func _init() -> void:
 	assert(game.secondary_hold and game.kaka_hook_charge>0.70)
 	game._secondary_released()
 	assert(not game.secondary_hold)
+	assert(is_instance_valid(game.kaka_hook_projectile))
+	assert(game.kaka_hook_phase=="outgoing")
+	assert(target.global_position.distance_to(game.player.global_position+game._forward()*1.35)>4.0)
+	assert(game.get_node_or_null("BoneHookProjectile33")!=null)
+	for i in range(80):
+		game._tick_kaka_hook_projectile(0.03)
+		if game.kaka_hook_phase.is_empty(): break
 	assert(target.global_position.distance_to(game.player.global_position+game._forward()*1.35)<0.2)
 	assert(float(target.get_meta("hooked_close",0.0))>1.0)
-	assert(game.get_node_or_null("AimedBoneHook32")!=null)
+	assert(game.kaka_hook_phase.is_empty())
 
 	# Q previews then places a real five-second damage-blocking wall.
 	game.skill_q_cd=0.0
@@ -70,14 +77,19 @@ func _init() -> void:
 	assert(game.kaka_walls.size()==1 and game.skill_q_cd>4.0)
 	var wall: StaticBody3D=game.kaka_walls[0]
 	assert(float(wall.get_meta("ttl"))==5.0)
+	assert(int(wall.get_meta("model_parts",0))>=89)
+	assert(wall.find_children("CartilageMembrane*","MeshInstance3D",false,false).size()>=6)
 	assert(game._kaka_wall_blocks_point(wall.global_position+Vector3.UP))
 
-	# E grants armor, rams forward, and converts a wall into a radial rib explosion.
+	# E grants armor, physically pushes the wall to the rush endpoint, then shatters it.
 	game.skill_e_cd=0.0
 	game._cast_skill(1)
 	assert(game.kaka_armor_time>2.0 and game.invuln>=1.0)
 	game._tick_kaka_rush_contacts()
-	assert(game.kaka_wall_detonations==1 and game.kaka_walls.is_empty())
+	assert(game.kaka_wall_pushes==1 and game.kaka_wall_detonations==0 and game.kaka_walls.is_empty())
+	assert(wall.global_position.distance_to(wall.get_meta("push_end"))>1.0)
+	await create_timer(0.46).timeout
+	assert(game.kaka_wall_detonations==1)
 	assert(game.get_node_or_null("BoneWallExplosion32")!=null)
 
 	# Enemies now acquire from farther away and recycle attacks more aggressively.
@@ -94,7 +106,7 @@ func _init() -> void:
 
 	print(
 		"GODOT_PHASE32_KAKA_FIRSTPERSON_OK "
-		+ "aim=4 hammer=III hook=pull wall=preview+block ram=detonate aggression=up"
+		+ "aim=4 hammer=III hook=projectile+reel wall=89part_ribcage ram=push+endpoint_shatter aggression=up"
 	)
 	game.queue_free()
 	await process_frame

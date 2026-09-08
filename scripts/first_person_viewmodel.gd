@@ -5,7 +5,7 @@ var left_arm: Node3D
 var right_arm: Node3D
 var tool_root: Node3D
 var role := -1
-var base_position := Vector3(0.0, -0.42, -0.76)
+var base_position := Vector3(0.0, -0.56, -0.86)
 var action_time := 0.0
 var action_strength := 0.0
 var action_kind := ""
@@ -60,11 +60,11 @@ func build(host) -> void:
 	position = base_position
 	left_arm = Node3D.new()
 	left_arm.name = "LeftClayArm"
-	left_arm.position = Vector3(-0.31, -0.02, 0.03)
+	left_arm.position = Vector3(-0.54, -0.04, 0.06)
 	add_child(left_arm)
 	right_arm = Node3D.new()
 	right_arm.name = "RightClayArm"
-	right_arm.position = Vector3(0.31, -0.02, 0.03)
+	right_arm.position = Vector3(0.54, -0.04, 0.06)
 	add_child(right_arm)
 	tool_root = Node3D.new()
 	tool_root.name = "RoleTool"
@@ -88,10 +88,10 @@ func rebuild(index: int) -> void:
 	for entry in [[left_arm, -1.0], [right_arm, 1.0]]:
 		var arm := entry[0] as Node3D
 		var side := float(entry[1])
-		var sleeve := _part(arm, "ClaySleeve", _capsule(0.14, 0.60), Vector3(0, 0.02, 0.0), Vector3.ONE, cuff_color)
+		var sleeve := _part(arm, "ClaySleeve", _capsule(0.12, 0.56), Vector3(0, 0.02, 0.0), Vector3.ONE, cuff_color)
 		sleeve.rotation.x = -0.70
 		sleeve.rotation.z = side * 0.12
-		_part(arm, "GlovedHand", _sphere(0.19), Vector3(side * 0.01, 0.23, -0.22), Vector3(1.0, 0.82, 1.08), role_color)
+		_part(arm, "GlovedHand", _sphere(0.16), Vector3(side * 0.025, 0.23, -0.22), Vector3(0.94, 0.80, 1.02), role_color)
 		var cuff := _part(arm, "ClayCuff", _cylinder(0.18, 0.12), Vector3(0, -0.21, 0.15), Vector3.ONE, Color("#eee4d2"))
 		cuff.rotation.x = -0.70
 	_build_tool(role)
@@ -104,17 +104,19 @@ func _build_tool(index: int) -> void:
 				var prong := _part(tool_root, "ArcProng", _cylinder(0.025, 0.34), Vector3(x, 0.40, -0.46), Vector3.ONE, Color("#fff8b0"), 2.6)
 				prong.rotation.x = PI * 0.5
 		1:
-			var hammer_handle := _part(left_arm, "BoneHammerHandle", _cylinder(0.065, 0.68), Vector3(-0.02, 0.31, -0.38), Vector3.ONE, Color("#d8c6aa"))
+			var hammer_handle := _part(left_arm, "BoneHammerHandle", _cylinder(0.060, 0.68), Vector3(-0.09, 0.31, -0.38), Vector3.ONE, Color("#9d8063"))
 			hammer_handle.rotation.x = PI * 0.5
-			var hammer_head := _part(left_arm, "BoneHammerHead", _capsule(0.14, 0.56), Vector3(-0.02, 0.34, -0.72), Vector3(1.0, 1.0, 1.0), Color("#fff4df"), 0.35)
+			var hammer_head := _part(left_arm, "BoneHammerHead", _capsule(0.14, 0.60), Vector3(-0.09, 0.34, -0.72), Vector3(1.0, 0.92, 1.0), Color("#ead8ba"), 0.18)
 			hammer_head.rotation.z = PI * 0.5
-			_part(left_arm, "HammerKnuckleL", _sphere(0.13), Vector3(-0.30, 0.34, -0.72), Vector3(0.85, 1.0, 1.0), Color("#f4ead6"))
-			_part(left_arm, "HammerKnuckleR", _sphere(0.13), Vector3(0.26, 0.34, -0.72), Vector3(0.85, 1.0, 1.0), Color("#f4ead6"))
-			var hook_shaft := _part(tool_root, "BoneDriver", _cylinder(0.06, 0.62), Vector3(0.02, 0.31, -0.39), Vector3.ONE, Color("#e8d9c2"))
+			_part(left_arm, "HammerKnuckleL", _sphere(0.13), Vector3(-0.39, 0.34, -0.72), Vector3(0.85, 0.96, 1.0), Color("#f2e4cc"))
+			_part(left_arm, "HammerKnuckleR", _sphere(0.13), Vector3(0.21, 0.34, -0.72), Vector3(0.85, 0.96, 1.0), Color("#f2e4cc"))
+			var hook_shaft := _part(tool_root, "BoneDriver", _cylinder(0.055, 0.60), Vector3(0.08, 0.31, -0.39), Vector3.ONE, Color("#9d8063"))
 			hook_shaft.rotation.x = PI * 0.5
-			var hook_ring := _part(tool_root, "BoneHook", TorusMesh.new(), Vector3(0.02, 0.33, -0.72), Vector3(0.18, 0.18, 0.18), Color("#fff8e8"), 0.55)
+			var hook_ring := _part(tool_root, "BoneHook", TorusMesh.new(), Vector3(0.08, 0.33, -0.72), Vector3(0.16, 0.16, 0.16), Color("#ead8ba"), 0.25)
 			hook_ring.rotation.y = PI * 0.5
-			_part(tool_root, "HookSight", _sphere(0.045), Vector3(0.02, 0.48, -0.68), Vector3.ONE, Color("#ffb85c"), 2.6)
+			_part(tool_root, "HookToothA", _capsule(0.035, 0.22), Vector3(-0.06, 0.42, -0.78), Vector3.ONE, Color("#fff2d9"), 0.35).rotation.z = -0.72
+			_part(tool_root, "HookToothB", _capsule(0.035, 0.22), Vector3(0.22, 0.42, -0.78), Vector3.ONE, Color("#fff2d9"), 0.35).rotation.z = 0.72
+			_part(tool_root, "HookSight", _sphere(0.040), Vector3(0.08, 0.49, -0.67), Vector3.ONE, Color("#ffb85c"), 2.1)
 		2:
 			var nozzle := _part(tool_root, "PlasmaNozzle", _cylinder(0.11, 0.46), Vector3(0.02, 0.30, -0.38), Vector3.ONE, Color("#70e8ff"), 1.4)
 			nozzle.rotation.x = PI * 0.5
@@ -158,10 +160,10 @@ func _process(delta: float) -> void:
 	left_arm.rotation = Vector3(-cast * 0.24 + hurt * 0.22 - hammer_charge * 0.82 - action * action_strength * 0.95, -cast * 0.12, -0.08 - sway - hammer_charge * 0.18)
 	right_arm.rotation = Vector3(-cast * 0.52 + hurt * 0.30 - hook_charge * 0.20 + action * action_strength * 0.18, cast * 0.10, 0.08 + sway + hook_charge * 0.10)
 	if role == 1:
-		left_arm.position.z = -hammer_charge * 0.16 + action * action_strength * 0.26
-		right_arm.position.z = -hook_charge * 0.22
+		left_arm.position.z = 0.06 - hammer_charge * 0.13 + action * action_strength * 0.24
+		right_arm.position.z = 0.06 - hook_charge * 0.16
 	else:
-		left_arm.position.z = 0.03
-		right_arm.position.z = 0.03
+		left_arm.position.z = 0.06
+		right_arm.position.z = 0.06
 	scale = Vector3(1.0 + hurt * 0.05 + armor * 0.035, 1.0 - hurt * 0.08 + armor * 0.025, 1.0 + armor * 0.04)
 # GODOT_PHASE32_KAKA_DUAL_VIEWMODEL

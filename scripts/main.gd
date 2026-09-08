@@ -76,11 +76,22 @@ var kaka_charge_visual: Node3D
 var kaka_hammer_stage := 0
 var kaka_hook_charge := 0.0
 var kaka_hook_target: CharacterBody3D
+var kaka_hook_projectile: Node3D
+var kaka_hook_phase := ""
+var kaka_hook_start := Vector3.ZERO
+var kaka_hook_end := Vector3.ZERO
+var kaka_hook_tip := Vector3.ZERO
+var kaka_hook_flight := 0.0
+var kaka_hook_power := 0.0
+var kaka_hook_victim: CharacterBody3D
 var kaka_wall_preview: Node3D
 var kaka_walls: Array[StaticBody3D] = []
 var kaka_armor_time := 0.0
 var kaka_wall_detonations := 0
+var kaka_wall_pushes := 0
 var kaka_rush_time := 0.0
+var kaka_rush_origin := Vector3.ZERO
+var kaka_rush_direction := Vector3.FORWARD
 var kaka_rush_hits: Dictionary = {}
 var bone_projectiles: Array[Node3D] = []
 var bubble_roll_charge := 0.0
@@ -2770,6 +2781,7 @@ func _cancel_phase11_holds() -> void:
 	kaka_hammer_stage = 0
 	kaka_hook_charge = 0.0
 	kaka_hook_target = null
+	_clear_kaka_hook_projectile()
 	kaka_armor_time = 0.0
 	bubble_roll_charge = 0.0
 	bubble_jump_charge = 0.0
@@ -2873,6 +2885,7 @@ func _tick_phase11(delta: float) -> void:
 			bubble_jump_charge = minf(1.0, bubble_jump_charge + delta / 1.2)
 	kaka_armor_time = maxf(0.0, kaka_armor_time - delta)
 	_tick_kaka_walls(delta)
+	_tick_kaka_hook_projectile(delta)
 	kaka_rush_time = maxf(0.0, kaka_rush_time - delta)
 	bubble_roll_time = maxf(0.0, bubble_roll_time - delta)
 	if bubble_roll_time <= 0.0:
@@ -3125,26 +3138,76 @@ func _release_kaka_hook() -> void:
 	var power := clampf(kaka_hook_charge, 0.12, 1.0)
 	var target := kaka_hook_target if is_instance_valid(kaka_hook_target) else _get_target(10.0 + power * 7.0, 0.08)
 	secondary_attack_cd = 0.75 + power * 1.15
-	if not is_instance_valid(target):
-		SkillVFX.spawn_hook_chain(self, player.global_position + Vector3.UP * 0.86, player.global_position + _forward() * (5.0 + power * 6.0) + Vector3.UP * 0.7, power, false)
-		_toast("BONE HOOK MISSED", Color("#d7c7ae"), 0.9)
-		_fp_action("HOOK MISS", 0.30)
-	else:
-		var hook_from := player.global_position + Vector3.UP * 0.86
-		var hook_to := target.global_position + Vector3.UP * 0.72
-		SkillVFX.spawn_hook_chain(self, hook_from, hook_to, power, true)
-		_damage_enemy(target, 7.0 + power * 7.0, 0.25 + power * 0.42, 0.0, Vector3.ZERO, false)
-		if not _is_host_boss(target):
-			var eye_drop := player.global_position + _forward() * 1.35
-			eye_drop.y = player.global_position.y
-			target.global_position = eye_drop
-			target.velocity = Vector3.ZERO
-			target.set_meta("hooked_close", 1.25)
-		_toast("HOOKED: HAMMER NOW!", Color("#ffcf78"), 1.25)
-		hit_shake = maxf(hit_shake, 0.08 + power * 0.08)
-		_fp_action("TARGET PULLED TO STRIKE", 0.62 + power * 0.22)
+	_clear_kaka_hook_projectile()
+	kaka_hook_start = player.global_position + Vector3.UP * 0.86
+	kaka_hook_end = target.global_position + Vector3.UP * 0.72 if is_instance_valid(target) else kaka_hook_start + _forward() * (6.0 + power * 10.0)
+	kaka_hook_tip = kaka_hook_start
+	kaka_hook_flight = 0.0
+	kaka_hook_power = power
+	kaka_hook_victim = target
+	kaka_hook_phase = "outgoing"
+	kaka_hook_projectile = SkillVFX.spawn_hook_projectile(self, kaka_hook_start, power)
+	SkillVFX.update_hook_projectile(kaka_hook_projectile, kaka_hook_start, kaka_hook_tip, 0.0, false)
+	_toast("BONE HOOK: FIRED", Color("#f3dfbd"), 0.75)
+	_fp_action("HOOK LAUNCH", 0.44 + power * 0.16)
 	kaka_hook_charge = 0.0
 	kaka_hook_target = null
+
+func _tick_kaka_hook_projectile(delta: float) -> void:
+	if kaka_hook_phase.is_empty() or not is_instance_valid(kaka_hook_projectile):
+		return
+	var hook_origin := player.global_position + Vector3.UP * 0.86
+	if kaka_hook_phase == "outgoing":
+		if is_instance_valid(kaka_hook_victim):
+			kaka_hook_end = kaka_hook_victim.global_position + Vector3.UP * 0.72
+		var flight_distance := maxf(0.2, kaka_hook_start.distance_to(kaka_hook_end))
+		kaka_hook_flight = minf(1.0, kaka_hook_flight + delta * (17.0 + kaka_hook_power * 13.0) / flight_distance)
+		kaka_hook_tip = kaka_hook_start.lerp(kaka_hook_end, kaka_hook_flight)
+		SkillVFX.update_hook_projectile(kaka_hook_projectile, hook_origin, kaka_hook_tip, kaka_hook_flight, false)
+		if kaka_hook_flight >= 1.0:
+			if is_instance_valid(kaka_hook_victim) and not bool(kaka_hook_victim.get_meta("dead", false)):
+				_damage_enemy(kaka_hook_victim, 7.0 + kaka_hook_power * 7.0, 0.25 + kaka_hook_power * 0.42, 0.0, Vector3.ZERO, false)
+				SkillVFX.spawn_hook_bite(self, kaka_hook_tip, kaka_hook_power)
+				hit_shake = maxf(hit_shake, 0.08 + kaka_hook_power * 0.08)
+				if _is_host_boss(kaka_hook_victim):
+					_toast("HOOK BITES — TOO HEAVY TO PULL", Color("#ffcf78"), 1.1)
+					_clear_kaka_hook_projectile()
+				else:
+					kaka_hook_phase = "returning"
+					_toast("HOOK BITE: REELING IN!", Color("#ffcf78"), 1.0)
+			else:
+				_toast("BONE HOOK MISSED", Color("#d7c7ae"), 0.9)
+				_fp_action("HOOK MISS", 0.30)
+				_clear_kaka_hook_projectile()
+	elif kaka_hook_phase == "returning":
+		if not is_instance_valid(kaka_hook_victim) or bool(kaka_hook_victim.get_meta("dead", false)):
+			_clear_kaka_hook_projectile()
+			return
+		var pull_point := player.global_position + _forward() * 1.35
+		pull_point.y = player.global_position.y
+		var pull_offset := pull_point - kaka_hook_victim.global_position
+		var pull_distance := pull_offset.length()
+		if pull_distance > 0.001:
+			var pull_speed := 7.5 + kaka_hook_power * 10.5
+			kaka_hook_victim.velocity = pull_offset.normalized() * pull_speed
+			kaka_hook_victim.global_position = kaka_hook_victim.global_position.move_toward(pull_point, pull_speed * delta)
+		kaka_hook_tip = kaka_hook_victim.global_position + Vector3.UP * 0.72
+		SkillVFX.update_hook_projectile(kaka_hook_projectile, hook_origin, kaka_hook_tip, clampf(1.0 - pull_distance / 16.0, 0.0, 1.0), true)
+		if pull_distance <= 0.24:
+			kaka_hook_victim.global_position = pull_point
+			kaka_hook_victim.velocity = Vector3.ZERO
+			kaka_hook_victim.set_meta("hooked_close", 1.25)
+			_toast("HOOKED: HAMMER NOW!", Color("#ffcf78"), 1.25)
+			_fp_action("TARGET PULLED TO STRIKE", 0.62 + kaka_hook_power * 0.22)
+			_clear_kaka_hook_projectile()
+
+func _clear_kaka_hook_projectile() -> void:
+	if is_instance_valid(kaka_hook_projectile):
+		kaka_hook_projectile.queue_free()
+	kaka_hook_projectile = null
+	kaka_hook_phase = ""
+	kaka_hook_victim = null
+	kaka_hook_flight = 0.0
 
 func _kaka_wall_command() -> void:
 	if not is_instance_valid(kaka_wall_preview):
@@ -3195,33 +3258,60 @@ func _kaka_wall_blocks_point(point: Vector3) -> bool:
 func _detonate_kaka_wall(wall: StaticBody3D) -> void:
 	if not is_instance_valid(wall) or bool(wall.get_meta("exploded", false)): return
 	wall.set_meta("exploded", true)
-	var blast_pos := _safe_skill_destination(wall.global_position + _forward() * 4.0)
+	var push_start := wall.global_position
+	var push_direction := kaka_rush_direction.normalized()
+	if push_direction.length_squared() < 0.1:
+		push_direction = _forward()
+	var blast_pos := _safe_skill_destination(kaka_rush_origin + push_direction * 13.2)
+	if blast_pos.distance_to(push_start) < 4.5:
+		blast_pos = _safe_skill_destination(push_start + push_direction * 4.5)
 	var radius := 5.2 + 0.35 * role_upgrade_level(1)
+	kaka_walls.erase(wall)
+	kaka_wall_pushes += 1
+	wall.set_meta("push_start", push_start)
+	wall.set_meta("push_end", blast_pos)
+	var wall_collision := wall.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if wall_collision: wall_collision.disabled = true
+	SkillVFX.spawn_wall_push_trail(self, push_start, blast_pos)
+	var launch_tw := create_tween()
+	launch_tw.set_parallel(true)
+	launch_tw.tween_property(wall, "global_position", blast_pos, 0.38).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	launch_tw.tween_property(wall, "rotation:z", wall.rotation.z + 0.16, 0.38).set_trans(Tween.TRANS_SINE)
+	launch_tw.tween_property(wall, "scale", Vector3(1.12, 0.90, 0.74), 0.38)
+	launch_tw.tween_callback(Callable(self, "_finish_kaka_wall_push").bind(wall, push_start, blast_pos, radius, push_direction)).set_delay(0.38)
+	damage_shake = maxf(damage_shake, 0.24)
+	_fp_action("BONE WALL LAUNCH", 0.78)
+	_toast("RIB RAM: WALL IN MOTION!", Color("#ffca78"), 1.1)
+
+func _finish_kaka_wall_push(wall: StaticBody3D, push_start: Vector3, blast_pos: Vector3, radius: float, push_direction: Vector3) -> void:
 	for enemy in enemies:
-		if not is_instance_valid(enemy) or enemy.get_meta("dead", false): continue
+		if not is_instance_valid(enemy) or bool(enemy.get_meta("dead", false)): continue
+		var segment := blast_pos - push_start
+		var segment_length_sq := maxf(0.001, segment.length_squared())
+		var segment_t := clampf((enemy.global_position - push_start).dot(segment) / segment_length_sq, 0.0, 1.0)
+		var closest := push_start + segment * segment_t
+		var path_distance := enemy.global_position.distance_to(closest)
+		if path_distance <= 1.75:
+			_damage_enemy(enemy, 22.0, 0.42, 0.0, push_direction * 10.0)
 		var off := enemy.global_position - blast_pos
 		if off.length() <= radius:
 			_damage_enemy(enemy, 42.0 + (radius - off.length()) * 4.0, 0.75, 0.0, off.normalized() * 13.0)
 	SkillVFX.spawn_wall_explosion(self, blast_pos, radius)
 	kaka_wall_detonations += 1
-	kaka_walls.erase(wall)
-	var wall_collision := wall.get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if wall_collision: wall_collision.disabled = true
-	var launch_tw := create_tween()
-	launch_tw.set_parallel(true)
-	launch_tw.tween_property(wall, "global_position", blast_pos, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	launch_tw.tween_property(wall, "scale", Vector3(1.45, 0.72, 0.35), 0.16)
-	launch_tw.chain().tween_callback(wall.queue_free)
-	damage_shake = maxf(damage_shake, 0.24)
-	_fp_action("BONE WALL DETONATION", 1.0)
-	_toast("ARMORED RAM + WALL: RIBQUAKE!", Color("#ffb15e"), 1.6)
+	if is_instance_valid(wall):
+		wall.queue_free()
+	damage_shake = maxf(damage_shake, 0.34)
+	_fp_action("BONE WALL ENDPOINT SHATTER", 1.0)
+	_toast("RIBQUAKE: SHATTER AT MAX RANGE!", Color("#ffb15e"), 1.6)
 
 func _start_kaka_charge() -> void:
 	kaka_rush_time = 0.72
 	kaka_rush_hits.clear()
+	kaka_rush_origin = player.global_position
+	kaka_rush_direction = _forward().normalized()
 	kaka_armor_time = 2.2
 	invuln = maxf(invuln, 1.05)
-	SkillVFX.spawn_kaka_charge(self, player.global_position, _forward())
+	SkillVFX.spawn_kaka_charge(self, player.global_position, kaka_rush_direction)
 	SkillVFX.spawn_bone_armor(self, player.global_position + Vector3.UP * 0.55)
 	_fp_action("ARMORED RAM", 0.92)
 	_toast("ARMORED RAM: PUSH A WALL TO DETONATE", Color("#f4ead4"), 1.4)
