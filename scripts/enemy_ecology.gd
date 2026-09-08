@@ -37,13 +37,13 @@ func configure_enemy(enemy: CharacterBody3D) -> void:
 	enemy.set_meta("attack_mode",mode)
 	enemy.set_meta("special_state","idle")
 	enemy.set_meta("special_time",0.0)
-	enemy.set_meta("special_cd",1.0+fmod(float(enemy.get_instance_id()),2.2))
+	enemy.set_meta("special_cd",0.45+fmod(float(enemy.get_instance_id()),1.35))
 	enemy.set_meta("special_hit",false)
 	enemy.set_meta("charge_dir",Vector3.ZERO)
 	enemy.set_meta("split_generation",1 if kind=="SPLIT_LARVA" else 0)
 	if DISPLAY_BY_KIND.has(kind): enemy.set_meta("display_name",DISPLAY_BY_KIND[kind])
-	if mode in ["charge","ranged"]: enemy.set_meta("aggro_radius",16.0)
-	elif mode in ["split","swarm"]: enemy.set_meta("aggro_radius",11.0)
+	if mode in ["charge","ranged"]: enemy.set_meta("aggro_radius",21.0)
+	elif mode in ["split","swarm"]: enemy.set_meta("aggro_radius",15.0)
 
 func _specialist_count() -> int:
 	var count := 0
@@ -103,24 +103,24 @@ func tick(delta: float) -> void:
 			enemy.set_meta("special_cd",maxf(cd,0.8))
 			continue
 		var distance: float = enemy.global_position.distance_to(game.player.global_position)
-		if state=="idle" and cd<=0.0 and distance<18.0:
+		if state=="idle" and cd<=0.0 and distance<22.0:
 			if mode=="ranged" and distance>3.2:
 				state="aim"
-				time=0.72
+				time=0.56
 				EnemyFactory.spawn_attack_telegraph(game,"SPITTER",enemy.global_position)
 			elif mode=="charge" and distance>2.5:
 				state="windup"
-				time=0.68
+				time=0.54
 				enemy.set_meta("charge_dir",_flat_dir(enemy.global_position,game.player.global_position))
 				EnemyFactory.spawn_attack_telegraph(game,"RAMMER",enemy.global_position)
 		elif state=="aim" and time<=0.0:
 			_spawn_acid_shot(enemy)
 			state="idle"
-			cd=3.2
+			cd=2.05
 		elif state=="windup" and time<=0.0:
 			state="charge"
 			time=0.72
-			cd=4.4
+			cd=2.85
 			charge_starts += 1
 			enemy.set_meta("special_hit",false)
 			_spawn_charge_lane(enemy)
@@ -157,7 +157,7 @@ func _spawn_acid_shot(enemy: CharacterBody3D) -> void:
 		var angle := TAU*float(i)/4.0
 		EnemyFactory.sphere(root,"AcidDroplet",Vector3(cos(angle)*0.22,0,sin(angle)*0.22),Vector3.ONE*0.07,Color("#efff8a"),0.75,2.0)
 	var direction := _flat_dir(root.global_position,game.player.global_position)
-	projectiles.append({"node":root,"velocity":direction*8.8+Vector3.UP*0.45,"life":2.6,"damage":14.0})
+	projectiles.append({"node":root,"velocity":direction*10.8+Vector3.UP*0.45,"life":2.6,"damage":14.0,"trail":0.0})
 	ranged_shots += 1
 	EnemyFactory.spawn_attack_hit(game,"SPITTER",enemy.global_position+Vector3.UP*0.75)
 func _tick_projectiles(delta: float) -> void:
@@ -168,16 +168,26 @@ func _tick_projectiles(delta: float) -> void:
 			projectiles.remove_at(i)
 			continue
 		shot.life = float(shot.life)-delta
+		shot.trail = float(shot.get("trail",0.0))-delta
 		var velocity: Vector3 = shot.velocity
 		velocity.y -= 0.7*delta
 		shot.velocity = velocity
 		node.global_position += velocity*delta
 		node.rotation += Vector3(delta*5.0,delta*8.0,delta*3.0)
-		if node.global_position.distance_to(game.player.global_position+Vector3.UP*0.55)<0.72:
+		if float(shot.trail)<=0.0:
+			shot.trail=0.065
+			var drop := EnemyFactory.sphere(game,"AcidTrail32",node.global_position,Vector3(0.10,0.06,0.14),Color("#dfff64"),0.58,1.8)
+			var trail_tw: Tween = game.create_tween()
+			trail_tw.tween_property(drop,"scale",Vector3.ZERO,0.18)
+			trail_tw.tween_callback(drop.queue_free)
+		if game._kaka_wall_blocks_point(node.global_position):
+			game._toast("BONE WALL BLOCKED ACID",Color("#fff0d2"),0.8)
+			_remove_projectile(i)
+		elif node.global_position.distance_to(game.player.global_position+Vector3.UP*0.55)<0.72:
 			if game.dodge_time>0.0 and game.dodge_success_lock<=0.0:
 				_perfect_dodge("ACID SHOT EVADED")
 			elif game.invuln<=0.0:
-				var damage := float(shot.damage)*(0.18 if game.acid_umbrella_time>0.0 else 1.0)
+				var damage := float(shot.damage)*(0.35 if game.kaka_armor_time>0.0 else (0.18 if game.acid_umbrella_time>0.0 else 1.0))
 				game.hp=maxf(0.0,game.hp-damage)
 				game._player_hurt_feedback(damage,node.global_position,true)
 				game.invuln=0.72
@@ -203,6 +213,7 @@ func _perfect_dodge(message: String) -> void:
 
 func _hurt_player(enemy: CharacterBody3D, amount: float) -> void:
 	if game.invuln>0.0 or game.ko_time>0.0: return
+	amount *= 0.35 if game.kaka_armor_time>0.0 else 1.0
 	game.hp=maxf(0.0,game.hp-amount)
 	game._player_hurt_feedback(amount,enemy.global_position,true)
 	game.invuln=0.82

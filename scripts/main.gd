@@ -2,14 +2,14 @@ extends Node3D
 
 const ROLE_NAMES = ["SPARK", "KAKA", "BUBBLE", "SHROOM"]
 const ROLE_COLORS = [Color("#ffd83f"), Color("#f2e8d4"), Color("#63dcff"), Color("#b989ff")]
-const ROLE_SKILLS = [["Conductive Mark", "Neural Storm"], ["Long Bone", "Bone Charge"], ["Split Decoy", "Regurgitate"], ["Fungus Network", "Ferment Burst"]]
+const ROLE_SKILLS = [["Conductive Mark", "Neural Storm"], ["Bone Wall", "Armored Ram"], ["Split Decoy", "Regurgitate"], ["Fungus Network", "Ferment Burst"]]
 const Q_COOLDOWNS = [5.0, 4.5, 7.0, 5.0]
 const E_COOLDOWNS = [8.0, 6.5, 6.0, 7.5]
 const PRIMARY_ATTACK_COOLDOWNS = [0.16, 0.24, 1.0, 0.36]
 const PRIMARY_ATTACK_RANGES = [12.5, 14.0, 2.2, 10.5]
 const SECONDARY_ATTACK_COOLDOWNS = [2.8, 2.6, 3.0, 4.0]
-const PRIMARY_ATTACK_NAMES = ["ARC STREAM", "BONE NAILS", "MEGA ROLL", "SPORE BLOOM"]
-const SECONDARY_ATTACK_NAMES = ["LIGHTNING FORM", "BONE HOOK", "PLASMA SLING", "PUPPET THREAD"]
+const PRIMARY_ATTACK_NAMES = ["ARC STREAM", "BONE HAMMER", "MEGA ROLL", "SPORE BLOOM"]
+const SECONDARY_ATTACK_NAMES = ["LIGHTNING FORM", "AIMED BONE HOOK", "PLASMA SLING", "PUPPET THREAD"]
 const ROLE_VISUAL_SCALES = [0.90, 0.92, 0.91, 0.88]
 const CharacterFactory = preload("res://scripts/character_factory.gd")
 const MapFactory = preload("res://scripts/map_factory.gd")
@@ -35,6 +35,7 @@ var body_mesh: MeshInstance3D
 var head_mesh: MeshInstance3D
 var character_visual: Node3D
 var first_person_viewmodel: Node3D
+var first_person_aim: CanvasLayer
 var inventory_ui: CanvasLayer
 var inventory_open := false
 var map_visual_root: Node3D
@@ -72,6 +73,13 @@ var secondary_hold := false
 var kaka_charge_time := 0.0
 var kaka_charge_nails := 0
 var kaka_charge_visual: Node3D
+var kaka_hammer_stage := 0
+var kaka_hook_charge := 0.0
+var kaka_hook_target: CharacterBody3D
+var kaka_wall_preview: Node3D
+var kaka_walls: Array[StaticBody3D] = []
+var kaka_armor_time := 0.0
+var kaka_wall_detonations := 0
 var kaka_rush_time := 0.0
 var kaka_rush_hits: Dictionary = {}
 var bone_projectiles: Array[Node3D] = []
@@ -226,6 +234,9 @@ func _ready() -> void:
 	first_person_viewmodel = preload("res://scripts/first_person_viewmodel.gd").new()
 	camera_1p.add_child(first_person_viewmodel)
 	first_person_viewmodel.build(self)
+	first_person_aim = preload("res://scripts/first_person_aim.gd").new()
+	add_child(first_person_aim)
+	first_person_aim.build(self)
 	inventory_ui = preload("res://scripts/inventory_ui.gd").new()
 	add_child(inventory_ui)
 	inventory_ui.build(self)
@@ -484,7 +495,7 @@ func _spawn_enemy(kind: String, pos: Vector3, color: Color, max_hp: float, speed
 	e.set_meta("home", pos)
 	e.set_meta("wild_spawn", wild)
 	e.set_meta("territory", territory)
-	e.set_meta("aggro_radius", 7.5)
+	e.set_meta("aggro_radius", 11.5)
 	e.set_meta("stun", 0.0)
 	e.set_meta("pinned", 0.0)
 	e.set_meta("big", 0.0)
@@ -709,7 +720,10 @@ func _update_hud() -> void:
 	var ptxt := "READY" if primary_attack_cd <= 0.0 else "%.1f" % primary_attack_cd
 	var stxt := "READY" if secondary_attack_cd <= 0.0 else "%.1f" % secondary_attack_cd
 	if role_index == 0 and spark_mark_time > 0.0: qtxt = "RECALL"
-	if role_index == 1 and primary_hold: ptxt = "CHARGE x%d" % kaka_charge_nails
+	if role_index == 1 and primary_hold: ptxt = "HAMMER III" if kaka_hammer_stage >= 3 else "HAMMER %d/3" % maxi(1, kaka_hammer_stage)
+	if role_index == 1 and secondary_hold: stxt = "HOOK LOCK %d%%" % int(kaka_hook_charge * 100.0)
+	if role_index == 1 and is_instance_valid(kaka_wall_preview): qtxt = "PLACE WALL"
+	if role_index == 1 and kaka_armor_time > 0.0: etxt = "ARMOR %.1fs" % kaka_armor_time
 	if role_index == 2 and primary_hold: ptxt = "GROW %d%%" % int(bubble_roll_charge * 100.0)
 	if role_index == 2 and secondary_hold: stxt = "AIM %d%%" % int(bubble_jump_charge * 100.0)
 	if role_index == 2 and is_instance_valid(bubble_payload): etxt = "EJECT"
@@ -1210,10 +1224,15 @@ func _safe_skill_destination(point: Vector3) -> Vector3:
 func _forward() -> Vector3:
 	return Vector3.FORWARD.rotated(Vector3.UP, yaw).normalized()
 
+func _aim_forward() -> Vector3:
+	if not first_person:
+		return _forward()
+	return (Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch) * Vector3.FORWARD).normalized()
+
 func _get_target(max_dist := 12.0, min_dot := 0.35) -> CharacterBody3D:
 	var best: CharacterBody3D
 	var best_score := 9999.0
-	var f := _forward()
+	var f := _aim_forward()
 	for e in enemies:
 		if not is_instance_valid(e) or e.get_meta("dead", false) or e.get_meta("engulfed", false): continue
 		var off := e.global_position - player.global_position
@@ -1440,7 +1459,7 @@ func _tick_enemies(delta: float) -> void:
 			var chase_target := player.global_position
 			var is_wild := bool(e.get_meta("wild_spawn", false))
 			var home: Vector3 = e.get_meta("home", e.global_position)
-			var aggro_radius := float(e.get_meta("aggro_radius", 7.5))
+			var aggro_radius := float(e.get_meta("aggro_radius", 11.5))
 			var engaged := e.global_position.distance_to(player.global_position) <= aggro_radius or float(e.get_meta("combo_t", 0.0)) > 0.0
 			if is_wild and not engaged:
 				chase_target = home
@@ -1466,7 +1485,8 @@ func _tick_enemies(delta: float) -> void:
 				e.velocity.x = move_toward(e.velocity.x,v.x,10.0*delta)
 				e.velocity.z = move_toward(e.velocity.z,v.z,10.0*delta)
 			elif has_chase_target and off.length() > 0.7:
-				var v := off.normalized() * float(e.get_meta("speed")) * slow
+				var intent_boost := 1.18 if engaged and controlled <= 0.0 else 1.0
+				var v := off.normalized() * float(e.get_meta("speed")) * slow * intent_boost
 				e.velocity.x = move_toward(e.velocity.x, v.x, 12.0 * delta)
 				e.velocity.z = move_toward(e.velocity.z, v.z, 12.0 * delta)
 			else:
@@ -1489,10 +1509,10 @@ func _tick_enemies(delta: float) -> void:
 		var dist_to_player: float = e.global_position.distance_to(player.global_position)
 		if controlled <= 0.0 and old_attack > 0.0 and attack_windup <= 0.0:
 			if dist_to_player < 1.45 and invuln <= 0.0:
-				var received_damage := float(e.get_meta("contact_damage"))
+				var received_damage := float(e.get_meta("contact_damage")) * (0.35 if kaka_armor_time > 0.0 else 1.0)
 				hp = maxf(0.0, hp - received_damage)
 				_player_hurt_feedback(received_damage, e.global_position, true)
-				invuln = 0.85
+				invuln = 0.62
 				player.velocity += (player.global_position - e.global_position).normalized() * 5.8
 				var biome_trait := String(e.get_meta("biome_trait", ""))
 				match biome_trait:
@@ -1516,9 +1536,9 @@ func _tick_enemies(delta: float) -> void:
 				hit_shake = maxf(hit_shake, 0.08)
 				SkillVFX.spawn_dodge_success(self, player.global_position, ROLE_COLORS[role_index])
 				_toast("PERFECT DODGE", ROLE_COLORS[role_index], 1.0)
-		elif controlled <= 0.0 and attack_mode not in ["ranged","charge"] and old_attack <= 0.0 and attack_cd <= 0.0 and dist_to_player < 1.65 and stun <= 0.0 and pinned <= 0.0:
-			attack_windup = 0.36
-			attack_cd = 1.15
+		elif controlled <= 0.0 and attack_mode not in ["ranged","charge"] and old_attack <= 0.0 and attack_cd <= 0.0 and dist_to_player < 1.90 and stun <= 0.0 and pinned <= 0.0:
+			attack_windup = 0.29
+			attack_cd = 0.78
 			EnemyFactory.spawn_attack_telegraph(self, String(e.get_meta("kind")), e.global_position)
 			if hpl:
 				var wind_kind: String = String(e.get_meta("kind"))
@@ -1526,7 +1546,7 @@ func _tick_enemies(delta: float) -> void:
 				hpl.modulate = Color(1.0,0.82,0.35) if wind_kind == "PLATELET" else (Color(0.86,0.55,1.0) if wind_kind == "HAIRBALL" else Color(0.65,1.0,0.48))
 		e.set_meta("attack_windup", attack_windup)
 		e.set_meta("attack_cd", attack_cd)
-		var attack_pose: float = 1.0 - clampf(attack_windup / 0.36, 0.0, 1.0) if old_attack > 0.0 else 0.0
+		var attack_pose: float = 1.0 - clampf(attack_windup / 0.29, 0.0, 1.0) if old_attack > 0.0 else 0.0
 		if special in ["aim","windup"]: attack_pose = 1.0-clampf(float(e.get_meta("special_time",0.0))/0.72,0.0,1.0)
 		elif special=="charge": attack_pose = 1.0
 		var impact_freeze := maxf(0.0,float(e.get_meta("impact_freeze",0.0))-delta)
@@ -1691,7 +1711,7 @@ func _skill_spark(slot: int) -> void:
 
 func _skill_kaka(slot: int) -> void:
 	if slot == 0:
-		_spawn_bone_bridge()
+		_kaka_wall_command()
 	else:
 		_start_kaka_charge()
 
@@ -1797,6 +1817,15 @@ func _spawn_skill_visual(slot: int) -> void:
 	var base_fov := minf(camera_fov + 4.0, 90.0) if first_person else camera_fov
 	active_camera.fov = base_fov + (5.5 if slot == 1 else 3.5)
 	create_tween().tween_property(active_camera, "fov", base_fov, 0.24)
+	_fp_action(("Q " if slot == 0 else "E ") + ROLE_SKILLS[role_index][slot], 0.82 if slot == 1 else 0.64)
+
+func _fp_action(label: String, strength := 0.5) -> void:
+	if is_instance_valid(first_person_aim): first_person_aim.trigger(label, strength)
+	if is_instance_valid(first_person_viewmodel): first_person_viewmodel.trigger_action(label, strength)
+	if first_person and is_instance_valid(camera_1p):
+		var base_fov := minf(camera_fov + 4.0, 90.0)
+		camera_1p.fov = base_fov + 1.4 + strength * 3.2
+		create_tween().tween_property(camera_1p, "fov", base_fov, 0.10 + strength * 0.13)
 
 func _build_mission() -> void:
 	entrance = Node3D.new()
@@ -2547,7 +2576,7 @@ func _nearest_shop_item(max_dist := 1.45) -> int:
 func _attack_target_position(target: CharacterBody3D, max_range: float) -> Vector3:
 	if is_instance_valid(target):
 		return target.global_position + Vector3.UP * 0.72
-	return player.global_position + _forward() * max_range + Vector3.UP * 0.75
+	return player.global_position + Vector3.UP * 0.82 + _aim_forward() * max_range
 
 func _primary_attack() -> void:
 	if _cinematic_locked(): return
@@ -2738,11 +2767,17 @@ func _cancel_phase11_holds() -> void:
 	secondary_hold = false
 	kaka_charge_time = 0.0
 	kaka_charge_nails = 0
+	kaka_hammer_stage = 0
+	kaka_hook_charge = 0.0
+	kaka_hook_target = null
+	kaka_armor_time = 0.0
 	bubble_roll_charge = 0.0
 	bubble_jump_charge = 0.0
 	if is_instance_valid(kaka_charge_visual):
 		kaka_charge_visual.queue_free()
 	kaka_charge_visual = null
+	if is_instance_valid(kaka_wall_preview): kaka_wall_preview.queue_free()
+	kaka_wall_preview = null
 
 func _primary_pressed() -> void:
 	if _cinematic_locked(): return
@@ -2755,7 +2790,8 @@ func _primary_pressed() -> void:
 		1:
 			kaka_charge_time = 0.0
 			kaka_charge_nails = 0
-			_primary_attack()
+			kaka_hammer_stage = 1
+			_fp_action("BONE HAMMER: WIND UP", 0.25)
 		2:
 			if primary_attack_cd > 0.0 or bubble_roll_time > 0.0:
 				primary_hold = false
@@ -2766,7 +2802,7 @@ func _primary_released() -> void:
 		return
 	primary_hold = false
 	if role_index == 1:
-		_release_kaka_volley()
+		_release_kaka_hammer()
 	elif role_index == 2:
 		_start_bubble_roll(bubble_roll_charge)
 	bubble_roll_charge = 0.0
@@ -2775,7 +2811,13 @@ func _secondary_pressed() -> void:
 	if _cinematic_locked(): return
 	if not role_selected or game_paused or mission_phase == "win" or ko_time > 0.0:
 		return
-	if role_index == 2:
+	if role_index == 1:
+		if secondary_attack_cd > 0.0: return
+		secondary_hold = true
+		kaka_hook_charge = 0.0
+		kaka_hook_target = _get_target(16.0, 0.12)
+		_fp_action("BONE HOOK: AIM", 0.25)
+	elif role_index == 2:
 		if secondary_attack_cd > 0.0 or bubble_airborne:
 			return
 		secondary_hold = true
@@ -2784,7 +2826,10 @@ func _secondary_pressed() -> void:
 		_secondary_attack()
 
 func _secondary_released() -> void:
-	if role_index == 2 and secondary_hold:
+	if role_index == 1 and secondary_hold:
+		secondary_hold = false
+		_release_kaka_hook()
+	elif role_index == 2 and secondary_hold:
 		secondary_hold = false
 		_launch_bubble_sling(bubble_jump_charge)
 		bubble_jump_charge = 0.0
@@ -2809,6 +2854,10 @@ func _tick_phase11(delta: float) -> void:
 				kaka_charge_time = minf(1.8, kaka_charge_time + delta)
 				var nail_cap := 7+2*role_upgrade_level(1)
 				var next_nails := mini(nail_cap, int(floor(kaka_charge_time / 1.75 * nail_cap)))
+				var next_stage := 3 if kaka_charge_time >= 1.15 else (2 if kaka_charge_time >= 0.55 else 1)
+				if next_stage != kaka_hammer_stage:
+					kaka_hammer_stage = next_stage
+					_fp_action("HAMMER %s READY" % ["I","II","III"][next_stage-1], 0.24 + float(next_stage) * 0.12)
 				if next_nails != kaka_charge_nails:
 					kaka_charge_nails = next_nails
 					_refresh_kaka_charge_visual()
@@ -2816,8 +2865,14 @@ func _tick_phase11(delta: float) -> void:
 				bubble_roll_charge = minf(1.0, bubble_roll_charge + delta / 1.6)
 			3:
 				if primary_attack_cd <= 0.0: _shroom_spore_shot()
-	if secondary_hold and role_index == 2:
-		bubble_jump_charge = minf(1.0, bubble_jump_charge + delta / 1.2)
+	if secondary_hold:
+		if role_index == 1:
+			kaka_hook_charge = minf(1.0, kaka_hook_charge + delta / 1.05)
+			kaka_hook_target = _get_target(10.0 + kaka_hook_charge * 7.0, 0.10)
+		elif role_index == 2:
+			bubble_jump_charge = minf(1.0, bubble_jump_charge + delta / 1.2)
+	kaka_armor_time = maxf(0.0, kaka_armor_time - delta)
+	_tick_kaka_walls(delta)
 	kaka_rush_time = maxf(0.0, kaka_rush_time - delta)
 	bubble_roll_time = maxf(0.0, bubble_roll_time - delta)
 	if bubble_roll_time <= 0.0:
@@ -2862,6 +2917,7 @@ func _spark_arc_shot() -> void:
 				chain_target.set_meta("spark_trace", 0.55)
 				SkillVFX.spawn_arc_stream(self, target.global_position + Vector3.UP * 0.72, chain_target.global_position + Vector3.UP * 0.72, true)
 	SkillVFX.spawn_arc_stream(self, player.global_position + Vector3.UP * 0.88, target_pos, is_instance_valid(target))
+	_fp_action("ARC HIT" if is_instance_valid(target) else "ARC STREAM", 0.22)
 
 func _spark_chain_target(source: CharacterBody3D, radius: float) -> CharacterBody3D:
 	var best: CharacterBody3D
@@ -2890,6 +2946,7 @@ func _spark_lightning_form() -> void:
 	invuln = maxf(invuln, 0.24)
 	damage_shake = maxf(damage_shake, 0.09)
 	_toast("LIGHTNING FORM: HIGH-SPEED PASS", Color("#ffe36b"), 1.2)
+	_fp_action("LIGHTNING FORM", 0.88)
 
 func _spark_conductive_mark_or_teleport() -> void:
 	if spark_mark_time > 0.0:
@@ -2949,7 +3006,36 @@ func _kaka_tap_nail() -> void:
 	primary_attack_cd = PRIMARY_ATTACK_COOLDOWNS[1]
 	anim_cast_time = 0.22
 	anim_cast_slot = 0
-	_spawn_bone_nail(_forward(), 15.0, false)
+	_spawn_bone_nail(_aim_forward(), 15.0, false)
+	_fp_action("BONE SPIKE", 0.46)
+
+func _release_kaka_hammer() -> void:
+	var stage := clampi(kaka_hammer_stage, 1, 3)
+	var reach: float = [0.0, 2.15, 2.65, 3.20][stage]
+	var damage: float = [0.0, 24.0, 39.0, 58.0][stage]
+	var target := _get_target(reach, -0.15)
+	var aim_dir: Vector3 = _aim_forward()
+	var impact: Vector3 = player.global_position + Vector3.UP * 0.82 + aim_dir * reach
+	if is_instance_valid(target):
+		impact = target.global_position + Vector3.UP * 0.55
+		_damage_enemy(target, damage, 0.12 * float(stage), 0.0, aim_dir * (7.0 + float(stage) * 4.5))
+	SkillVFX.spawn_hammer_slam(self, player.global_position + Vector3.UP * 0.75, impact, stage)
+	if stage >= 3:
+		var count := maxi(1, kaka_charge_nails + 1)
+		for i in range(count):
+			var spread := (float(i) - float(count - 1) * 0.5) * 0.045
+			_spawn_bone_nail(aim_dir.rotated(Vector3.UP, spread), 11.0, true)
+		_toast("HAMMER III: BONE SPIKE BURST x%d" % count, Color("#fff1d5"), 1.35)
+	else:
+		_toast("BONE HAMMER STAGE %d" % stage, Color("#f4ead4"), 0.9)
+	primary_attack_cd = 0.28 + float(stage) * 0.18
+	hit_shake = maxf(hit_shake, 0.07 + float(stage) * 0.045)
+	_fp_action("HAMMER IMPACT III" if stage == 3 else "HAMMER IMPACT %d" % stage, 0.38 + float(stage) * 0.18)
+	kaka_charge_time = 0.0
+	kaka_charge_nails = 0
+	kaka_hammer_stage = 0
+	if is_instance_valid(kaka_charge_visual): kaka_charge_visual.queue_free()
+	kaka_charge_visual = null
 
 func _release_kaka_volley() -> void:
 	var count := kaka_charge_nails
@@ -3035,14 +3121,118 @@ func _kaka_bone_hook() -> void:
 	SkillVFX.spawn_basic_attack(self, 1, true, player.global_position + Vector3.UP * 0.86, target.global_position + Vector3.UP * 0.7)
 	_toast("BONE HOOK: PULL + SHORT PIN", Color("#f2e8d4"), 1.4)
 
+func _release_kaka_hook() -> void:
+	var power := clampf(kaka_hook_charge, 0.12, 1.0)
+	var target := kaka_hook_target if is_instance_valid(kaka_hook_target) else _get_target(10.0 + power * 7.0, 0.08)
+	secondary_attack_cd = 0.75 + power * 1.15
+	if not is_instance_valid(target):
+		SkillVFX.spawn_hook_chain(self, player.global_position + Vector3.UP * 0.86, player.global_position + _forward() * (5.0 + power * 6.0) + Vector3.UP * 0.7, power, false)
+		_toast("BONE HOOK MISSED", Color("#d7c7ae"), 0.9)
+		_fp_action("HOOK MISS", 0.30)
+	else:
+		var hook_from := player.global_position + Vector3.UP * 0.86
+		var hook_to := target.global_position + Vector3.UP * 0.72
+		SkillVFX.spawn_hook_chain(self, hook_from, hook_to, power, true)
+		_damage_enemy(target, 7.0 + power * 7.0, 0.25 + power * 0.42, 0.0, Vector3.ZERO, false)
+		if not _is_host_boss(target):
+			var eye_drop := player.global_position + _forward() * 1.35
+			eye_drop.y = player.global_position.y
+			target.global_position = eye_drop
+			target.velocity = Vector3.ZERO
+			target.set_meta("hooked_close", 1.25)
+		_toast("HOOKED: HAMMER NOW!", Color("#ffcf78"), 1.25)
+		hit_shake = maxf(hit_shake, 0.08 + power * 0.08)
+		_fp_action("TARGET PULLED TO STRIKE", 0.62 + power * 0.22)
+	kaka_hook_charge = 0.0
+	kaka_hook_target = null
+
+func _kaka_wall_command() -> void:
+	if not is_instance_valid(kaka_wall_preview):
+		var preview_pos := _safe_skill_destination(player.global_position + _forward() * 3.0)
+		kaka_wall_preview = SkillVFX.spawn_bone_wall(self, preview_pos, yaw, true)
+		skill_q_cd = 0.0
+		_toast("BONE WALL PREVIEW: Q TO PLACE", Color("#eadbc3"), 1.5)
+		_fp_action("WALL BLUEPRINT", 0.48)
+		return
+	var place_pos := kaka_wall_preview.global_position
+	var place_yaw := kaka_wall_preview.rotation.y
+	kaka_wall_preview.queue_free()
+	kaka_wall_preview = null
+	var wall := SkillVFX.spawn_bone_wall(self, place_pos, place_yaw, false)
+	wall.set_meta("ttl", 5.0)
+	wall.set_meta("exploded", false)
+	kaka_walls.append(wall)
+	skill_q_cd = Q_COOLDOWNS[1]
+	_toast("BONE WALL: DAMAGE BLOCK 5s", Color("#fff1d5"), 1.3)
+	_fp_action("BONE WALL FORMED", 0.72)
+
+func _tick_kaka_walls(delta: float) -> void:
+	if is_instance_valid(kaka_wall_preview):
+		kaka_wall_preview.global_position = _safe_skill_destination(player.global_position + _forward() * 3.0)
+		kaka_wall_preview.rotation.y = yaw
+	for index in range(kaka_walls.size() - 1, -1, -1):
+		var wall := kaka_walls[index]
+		if not is_instance_valid(wall):
+			kaka_walls.remove_at(index)
+			continue
+		var ttl := maxf(0.0, float(wall.get_meta("ttl", 0.0)) - delta)
+		wall.set_meta("ttl", ttl)
+		var breathe := 1.0 + sin(living_time * 8.0 + float(index)) * 0.018
+		wall.scale.y = breathe
+		if ttl <= 0.0:
+			kaka_walls.remove_at(index)
+			wall.queue_free()
+
+func _kaka_wall_blocks_point(point: Vector3) -> bool:
+	for wall in kaka_walls:
+		if not is_instance_valid(wall): continue
+		var local := wall.to_local(point)
+		if absf(local.x) <= 1.65 and absf(local.z) <= 0.55 and local.y >= -0.2 and local.y <= 2.9:
+			SkillVFX.spawn_bone_impact(self, point, false)
+			return true
+	return false
+
+func _detonate_kaka_wall(wall: StaticBody3D) -> void:
+	if not is_instance_valid(wall) or bool(wall.get_meta("exploded", false)): return
+	wall.set_meta("exploded", true)
+	var blast_pos := _safe_skill_destination(wall.global_position + _forward() * 4.0)
+	var radius := 5.2 + 0.35 * role_upgrade_level(1)
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.get_meta("dead", false): continue
+		var off := enemy.global_position - blast_pos
+		if off.length() <= radius:
+			_damage_enemy(enemy, 42.0 + (radius - off.length()) * 4.0, 0.75, 0.0, off.normalized() * 13.0)
+	SkillVFX.spawn_wall_explosion(self, blast_pos, radius)
+	kaka_wall_detonations += 1
+	kaka_walls.erase(wall)
+	var wall_collision := wall.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if wall_collision: wall_collision.disabled = true
+	var launch_tw := create_tween()
+	launch_tw.set_parallel(true)
+	launch_tw.tween_property(wall, "global_position", blast_pos, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	launch_tw.tween_property(wall, "scale", Vector3(1.45, 0.72, 0.35), 0.16)
+	launch_tw.chain().tween_callback(wall.queue_free)
+	damage_shake = maxf(damage_shake, 0.24)
+	_fp_action("BONE WALL DETONATION", 1.0)
+	_toast("ARMORED RAM + WALL: RIBQUAKE!", Color("#ffb15e"), 1.6)
+
 func _start_kaka_charge() -> void:
 	kaka_rush_time = 0.72
 	kaka_rush_hits.clear()
-	invuln = maxf(invuln, 0.20)
+	kaka_armor_time = 2.2
+	invuln = maxf(invuln, 1.05)
 	SkillVFX.spawn_kaka_charge(self, player.global_position, _forward())
-	_toast("BONE CHARGE: CREW COLLISION ON", Color("#f4ead4"), 1.2)
+	SkillVFX.spawn_bone_armor(self, player.global_position + Vector3.UP * 0.55)
+	_fp_action("ARMORED RAM", 0.92)
+	_toast("ARMORED RAM: PUSH A WALL TO DETONATE", Color("#f4ead4"), 1.4)
 
 func _tick_kaka_rush_contacts() -> void:
+	for wall in kaka_walls.duplicate():
+		if is_instance_valid(wall):
+			var local: Vector3 = player.global_transform.basis.inverse() * (wall.global_position - player.global_position)
+			if local.z < 0.5 and local.z > -3.3 and absf(local.x) < 2.0:
+				_detonate_kaka_wall(wall)
+				break
 	for enemy in enemies:
 		if not is_instance_valid(enemy) or enemy.get_meta("dead", false): continue
 		var key := enemy.get_instance_id()
@@ -3082,6 +3272,7 @@ func _start_bubble_roll(power: float) -> void:
 	anim_cast_slot = 0
 	SkillVFX.spawn_bubble_roll(self, player.global_position, bubble_roll_power)
 	_toast("MEGA ROLL %d%%" % int(bubble_roll_power * 100.0), Color("#63dcff"), 1.0)
+	_fp_action("MEGA ROLL", 0.50 + bubble_roll_power * 0.32)
 
 func _tick_bubble_roll_contacts() -> void:
 	var radius := 1.0 + bubble_roll_power * 0.75
@@ -3135,6 +3326,7 @@ func _launch_bubble_sling(power: float) -> void:
 	player.velocity.y = 7.5 + p * 6.0
 	invuln = maxf(invuln, 0.20)
 	SkillVFX.spawn_bubble_sling(self, player.global_position, _forward(), p)
+	_fp_action("PLASMA SLING", 0.52 + p * 0.32)
 func _bubble_land() -> void:
 	bubble_airborne = false
 	var power := clampf(bubble_jump_charge, 0.15, 1.0)
@@ -3219,6 +3411,7 @@ func _shroom_spore_shot() -> void:
 			target.set_meta("spore_stacks", 0)
 			_shroom_spore_bloom(target.global_position)
 	SkillVFX.spawn_spore_shot(self, player.global_position + Vector3.UP * 0.82, target_pos)
+	_fp_action("SPORE HIT" if is_instance_valid(target) else "SPORE SHOT", 0.34)
 func _shroom_spore_bloom(pos: Vector3) -> void:
 	for enemy in enemies:
 		if is_instance_valid(enemy) and not enemy.get_meta("dead", false) and enemy.global_position.distance_to(pos) < 2.5:
@@ -3232,15 +3425,18 @@ func _shroom_puppet_thread() -> void:
 	var corpse := _get_corpse_target(9.0)
 	if is_instance_valid(corpse):
 		_control_clay_corpse(corpse)
+		_fp_action("CORPSE PUPPET LOCK", 0.78)
 		return
 	var target := _get_target(13.0, 0.10)
 	if not is_instance_valid(target):
 		_toast("PUPPET THREAD: NO TARGET", ROLE_COLORS[3], 1.0)
+		_fp_action("PUPPET SEARCH", 0.28)
 		return
 	if _is_host_boss(target):
 		_damage_enemy(target, 18.0, 1.0)
 		SkillVFX.spawn_puppet_thread(self, player.global_position + Vector3.UP, target.global_position + Vector3.UP)
 		_toast("GIANT PATIENT: soothing thread, not possession", ROLE_COLORS[3], 1.4)
+		_fp_action("SOOTHING THREAD", 0.64)
 		return
 	var active_puppet: CharacterBody3D
 	for enemy in enemies:
@@ -3256,6 +3452,7 @@ func _shroom_puppet_thread() -> void:
 		_damage_enemy(target, 6.0, 0.16, 0.0, Vector3.ZERO, false)
 		SkillVFX.spawn_puppet_thread(self, player.global_position + Vector3.UP * 0.9, target.global_position + Vector3.UP * 0.8)
 		_toast("PUPPET THREAD: ENEMY HIJACKED", Color("#b989ff"), 1.6)
+	_fp_action("PUPPET LINK", 0.72)
 func _get_corpse_target(max_dist: float) -> CharacterBody3D:
 	var best: CharacterBody3D
 	var best_score := 9999.0
@@ -3381,7 +3578,7 @@ func _shroom_ferment_burst() -> void:
 
 func _spark_wall_mark_position() -> Vector3:
 	var origin := player.global_position + Vector3.UP * 0.82
-	var finish := origin + _forward() * 18.0
+	var finish := origin + _aim_forward() * 18.0
 	var query := PhysicsRayQueryParameters3D.create(origin, finish)
 	query.exclude = [player.get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)

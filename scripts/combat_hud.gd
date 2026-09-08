@@ -1,6 +1,6 @@
 extends CanvasLayer
 const NAMES = ["闪仔 SPARK","咔咔 KAKA","泡泡 BUBBLE","菇菇 SHROOM"]
-const SKILLS = [["电弧连射","闪电疾行","导电标记","神经风暴"],["骨钉蓄射","骨钩","长骨","骨冲撞"],["膨胀滚动","蓄力弹跳","分裂诱饵","吞吐炮"],["孢子弹","寄生操控","菌毯","发酵"]]
+const SKILLS = [["电弧连射","闪电疾行","导电标记","神经风暴"],["三段骨锤","蓄力骨钩","骨墙预览","骨甲冲撞"],["膨胀滚动","蓄力弹跳","分裂诱饵","吞吐炮"],["孢子弹","寄生操控","菌毯","发酵"]]
 const INK := Color("f4e9d4")
 var game
 var root_ui: Control
@@ -219,16 +219,22 @@ func _update_skills() -> void:
 			card.bar.value = 0
 		return
 	if game.primary_hold and game.role_index == 1:
-		skills[0].state.text = "蓄力 ×%d" % game.kaka_charge_nails
+		skills[0].state.text = "蓄力 ×%d" % game.kaka_charge_nails if game.kaka_hammer_stage <= 0 else "骨锤 %d/3段" % game.kaka_hammer_stage
 		skills[0].bar.value = game.kaka_charge_time/1.8*100
 	elif game.primary_hold and game.role_index == 2:
 		skills[0].state.text = "膨胀 %d%%" % int(game.bubble_roll_charge*100)
 		skills[0].bar.value = game.bubble_roll_charge*100
 	elif game.primary_hold:
 		skills[0].state.text = "连续发射"
-	if game.secondary_hold and game.role_index == 2:
-		skills[1].state.text = "蓄跳 %d%%" % int(game.bubble_jump_charge*100)
-		skills[1].bar.value = game.bubble_jump_charge*100
+	if game.secondary_hold:
+		if game.role_index == 1:
+			skills[1].state.text = "钩锁瞄准 %d%%" % int(game.kaka_hook_charge*100)
+			skills[1].bar.value = game.kaka_hook_charge*100
+		elif game.role_index == 2:
+			skills[1].state.text = "蓄跳 %d%%" % int(game.bubble_jump_charge*100)
+			skills[1].bar.value = game.bubble_jump_charge*100
+	if game.role_index == 1 and is_instance_valid(game.kaka_wall_preview): skills[2].state.text = "再次 Q 放置"
+	if game.role_index == 1 and game.kaka_armor_time > 0: skills[3].state.text = "骨甲 %.1fs" % game.kaka_armor_time
 	if game.role_index == 0 and game.spark_mark_time > 0: skills[2].state.text = "再按 Q 瞬移"
 	if game.role_index == 2 and is_instance_valid(game.bubble_payload): skills[3].state.text = "E 吐出"
 
@@ -241,7 +247,9 @@ func _update_enemies(delta: float) -> void:
 		if not is_instance_valid(enemy) or enemy.get_meta("dead",false) or not enemy.is_visible_in_tree(): continue
 		if enemy == game.mouse_target or enemy.get_meta("host_boss",false): continue
 		var old_label: Label3D = enemy.get_meta("hp_label",null)
-		if old_label: old_label.modulate.a = 0.0
+		if old_label:
+			old_label.modulate.a = 0.0
+			old_label.visible = false
 		var distance: float = game.player.position.distance_to(enemy.position)
 		if distance > 14.0: continue
 		var p: Vector3 = enemy.global_position+Vector3.UP*(2.25 if enemy.get_meta("kind","") == "PARASITE" else 1.85)

@@ -6,6 +6,9 @@ var right_arm: Node3D
 var tool_root: Node3D
 var role := -1
 var base_position := Vector3(0.0, -0.42, -0.76)
+var action_time := 0.0
+var action_strength := 0.0
+var action_kind := ""
 
 func _mat(color: Color, emission := 0.0) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
@@ -101,10 +104,17 @@ func _build_tool(index: int) -> void:
 				var prong := _part(tool_root, "ArcProng", _cylinder(0.025, 0.34), Vector3(x, 0.40, -0.46), Vector3.ONE, Color("#fff8b0"), 2.6)
 				prong.rotation.x = PI * 0.5
 		1:
-			var shaft := _part(tool_root, "BoneDriver", _cylinder(0.075, 0.64), Vector3(0.02, 0.31, -0.40), Vector3.ONE, Color("#f4ead6"))
-			shaft.rotation.x = PI * 0.5
-			_part(tool_root, "BoneKnuckleA", _sphere(0.12), Vector3(0.02, 0.31, -0.10), Vector3(1.25, 0.72, 0.82), Color("#fff4df"))
-			_part(tool_root, "BoneKnuckleB", _sphere(0.10), Vector3(0.02, 0.31, -0.71), Vector3(0.75, 0.75, 1.35), Color("#fff4df"))
+			var hammer_handle := _part(left_arm, "BoneHammerHandle", _cylinder(0.065, 0.68), Vector3(-0.02, 0.31, -0.38), Vector3.ONE, Color("#d8c6aa"))
+			hammer_handle.rotation.x = PI * 0.5
+			var hammer_head := _part(left_arm, "BoneHammerHead", _capsule(0.14, 0.56), Vector3(-0.02, 0.34, -0.72), Vector3(1.0, 1.0, 1.0), Color("#fff4df"), 0.35)
+			hammer_head.rotation.z = PI * 0.5
+			_part(left_arm, "HammerKnuckleL", _sphere(0.13), Vector3(-0.30, 0.34, -0.72), Vector3(0.85, 1.0, 1.0), Color("#f4ead6"))
+			_part(left_arm, "HammerKnuckleR", _sphere(0.13), Vector3(0.26, 0.34, -0.72), Vector3(0.85, 1.0, 1.0), Color("#f4ead6"))
+			var hook_shaft := _part(tool_root, "BoneDriver", _cylinder(0.06, 0.62), Vector3(0.02, 0.31, -0.39), Vector3.ONE, Color("#e8d9c2"))
+			hook_shaft.rotation.x = PI * 0.5
+			var hook_ring := _part(tool_root, "BoneHook", TorusMesh.new(), Vector3(0.02, 0.33, -0.72), Vector3(0.18, 0.18, 0.18), Color("#fff8e8"), 0.55)
+			hook_ring.rotation.y = PI * 0.5
+			_part(tool_root, "HookSight", _sphere(0.045), Vector3(0.02, 0.48, -0.68), Vector3.ONE, Color("#ffb85c"), 2.6)
 		2:
 			var nozzle := _part(tool_root, "PlasmaNozzle", _cylinder(0.11, 0.46), Vector3(0.02, 0.30, -0.38), Vector3.ONE, Color("#70e8ff"), 1.4)
 			nozzle.rotation.x = PI * 0.5
@@ -122,20 +132,36 @@ func refresh_visibility() -> void:
 		return
 	visible = game.first_person and game.role_selected and not game.game_paused and not game.inventory_open and not game._cinematic_locked()
 
-func _process(_delta: float) -> void:
+func trigger_action(kind: String, strength := 0.5) -> void:
+	action_kind = kind
+	action_strength = clampf(strength, 0.0, 1.0)
+	action_time = 0.24 + action_strength * 0.20
+
+func _process(delta: float) -> void:
 	if not is_instance_valid(game): return
 	if role != game.role_index: rebuild(game.role_index)
 	refresh_visibility()
 	if not visible: return
+	action_time = maxf(0.0, action_time - delta)
 	var planar_speed := Vector2(game.player.velocity.x, game.player.velocity.z).length()
 	var stride := clampf(planar_speed / 9.2, 0.0, 1.3)
 	var clay_tick := floorf(game.living_time * 12.0) / 12.0
 	var bob := sin(clay_tick * 9.0) * 0.018 * stride
 	var sway := cos(clay_tick * 4.5) * 0.024 * stride
 	position = base_position + Vector3(sway, bob + absf(bob) * 0.4, 0.0)
-	var cast := sin(clampf(game.anim_cast_time / 0.42, 0.0, 1.0) * PI) if game.anim_cast_time > 0.0 else 0.0
-	var hurt := sin(clampf(game.anim_hurt_time / 0.30, 0.0, 1.0) * PI) if game.anim_hurt_time > 0.0 else 0.0
-	left_arm.rotation = Vector3(-cast * 0.24 + hurt * 0.22, -cast * 0.12, -0.08 - sway)
-	right_arm.rotation = Vector3(-cast * 0.52 + hurt * 0.30, cast * 0.10, 0.08 + sway)
-	scale = Vector3(1.0 + hurt * 0.05, 1.0 - hurt * 0.08, 1.0)
-# GODOT_PHASE30_FIRST_PERSON_VIEWMODEL
+	var cast: float = sin(clampf(game.anim_cast_time / 0.42, 0.0, 1.0) * PI) if game.anim_cast_time > 0.0 else 0.0
+	var hurt: float = sin(clampf(game.anim_hurt_time / 0.30, 0.0, 1.0) * PI) if game.anim_hurt_time > 0.0 else 0.0
+	var action: float = sin(clampf(action_time / (0.24 + action_strength * 0.20), 0.0, 1.0) * PI) if action_time > 0.0 else 0.0
+	var hammer_charge: float = clampf(game.kaka_charge_time / 1.8, 0.0, 1.0) if role == 1 and game.primary_hold else 0.0
+	var hook_charge: float = game.kaka_hook_charge if role == 1 and game.secondary_hold else 0.0
+	var armor: float = clampf(game.kaka_armor_time / 2.2, 0.0, 1.0) if role == 1 else 0.0
+	left_arm.rotation = Vector3(-cast * 0.24 + hurt * 0.22 - hammer_charge * 0.82 - action * action_strength * 0.95, -cast * 0.12, -0.08 - sway - hammer_charge * 0.18)
+	right_arm.rotation = Vector3(-cast * 0.52 + hurt * 0.30 - hook_charge * 0.20 + action * action_strength * 0.18, cast * 0.10, 0.08 + sway + hook_charge * 0.10)
+	if role == 1:
+		left_arm.position.z = -hammer_charge * 0.16 + action * action_strength * 0.26
+		right_arm.position.z = -hook_charge * 0.22
+	else:
+		left_arm.position.z = 0.03
+		right_arm.position.z = 0.03
+	scale = Vector3(1.0 + hurt * 0.05 + armor * 0.035, 1.0 - hurt * 0.08 + armor * 0.025, 1.0 + armor * 0.04)
+# GODOT_PHASE32_KAKA_DUAL_VIEWMODEL

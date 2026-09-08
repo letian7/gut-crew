@@ -573,6 +573,94 @@ static func spawn_kaka_charge(parent: Node3D, pos: Vector3, direction: Vector3) 
 		var rail := cylinder(root, "ChargeRail", start, end, 0.09, Color("#f4ead4"), 0.58, 2.2)
 		_fade_free(rail, 0.34, Vector3.ONE * 0.16)
 	parent.get_tree().create_timer(0.42).timeout.connect(root.queue_free)
+
+static func spawn_hammer_slam(parent: Node3D, origin: Vector3, impact: Vector3, stage: int) -> void:
+	var root := Node3D.new()
+	root.name = "BoneHammerImpact32"
+	parent.add_child(root)
+	var bone := Color("#fff1d6")
+	var hot := Color("#ffb45e")
+	var trail := cylinder(root, "HammerArc", origin, impact, 0.08 + float(stage) * 0.035, bone, 0.82, 2.1 + float(stage) * 0.7)
+	_fade_free(trail, 0.13 + float(stage) * 0.025, Vector3(0.18, 1.0, 0.18))
+	for ring_index in range(stage):
+		var ring := torus(root, "HammerShockRing", impact, Vector3.ONE * (0.12 + float(ring_index) * 0.045), hot if ring_index % 2 == 0 else bone, 0.54, 2.8)
+		var tw := parent.create_tween()
+		tw.tween_interval(float(ring_index) * 0.035)
+		tw.tween_property(ring, "scale", Vector3.ONE * (0.75 + float(stage) * 0.32 + float(ring_index) * 0.22), 0.18)
+		tw.tween_property(ring, "scale", Vector3.ZERO, 0.08)
+	for i in range(4 + stage * 3):
+		var a := TAU * float(i) / float(4 + stage * 3)
+		var tip := impact + Vector3(cos(a) * (0.45 + stage * 0.18), 0.18 + float(i % 3) * 0.18, sin(a) * (0.45 + stage * 0.18))
+		var shard := cylinder(root, "HammerBoneShard", impact, tip, 0.025 + stage * 0.008, bone, 0.88, 1.7)
+		_fade_free(shard, 0.24, Vector3.ONE * 0.06)
+	parent.get_tree().create_timer(0.42).timeout.connect(root.queue_free)
+
+static func spawn_hook_chain(parent: Node3D, origin: Vector3, target: Vector3, power: float, hit: bool) -> void:
+	var root := Node3D.new()
+	root.name = "AimedBoneHook32"
+	parent.add_child(root)
+	var links := 7 + int(power * 7.0)
+	for i in range(links):
+		var a := float(i) / float(links)
+		var b := float(i + 1) / float(links)
+		var pa := origin.lerp(target, a) + Vector3.UP * sin(a * PI) * 0.18
+		var pb := origin.lerp(target, b) + Vector3.UP * sin(b * PI) * 0.18
+		cylinder(root, "BoneChainLink", pa, pb, 0.035 + power * 0.018, Color("#f4ead4"), 0.88, 1.5 + power)
+	var hook := torus(root, "HookJaw", target, Vector3.ONE * (0.13 + power * 0.07), Color("#fff8e7") if hit else Color("#cbbca8"), 0.92, 2.4)
+	hook.rotation.x = PI * 0.5
+	var tw := parent.create_tween()
+	tw.tween_interval(0.06 if hit else 0.12)
+	tw.tween_property(root, "scale", Vector3.ONE * 0.05, 0.16)
+	tw.tween_callback(root.queue_free)
+
+static func spawn_bone_wall(parent: Node3D, pos: Vector3, yaw: float, preview: bool) -> StaticBody3D:
+	var wall := StaticBody3D.new()
+	wall.name = "BoneWallPreview32" if preview else "BoneWall32"
+	parent.add_child(wall)
+	wall.global_position = pos
+	wall.rotation.y = yaw
+	for x in range(-3, 4):
+		var height := 1.75 + (1.0 - absf(float(x)) / 4.0) * 0.75
+		var pillar := cylinder(wall, "WallRib", Vector3(float(x) * 0.38, 0.05, 0), Vector3(float(x) * 0.38, height, 0), 0.15, Color("#d9cdb9") if preview else Color("#f4ead4"), 0.28 if preview else 1.0, 0.55 if preview else 1.2)
+		pillar.rotation.z = sin(float(x) * 1.7) * 0.035
+	for y in [0.55, 1.25, 1.90]:
+		cylinder(wall, "WallSpine", Vector3(-1.35, y, 0.04), Vector3(1.35, y, 0.04), 0.085, Color("#ffca7a") if not preview else Color("#ead8bf"), 0.30 if preview else 0.96, 0.8)
+	var collision := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(3.0, 2.55, 0.38)
+	collision.shape = shape
+	collision.position.y = 1.27
+	collision.disabled = preview
+	wall.add_child(collision)
+	wall.set_meta("preview", preview)
+	wall.set_meta("ttl", 5.0)
+	return wall
+
+static func spawn_bone_armor(parent: Node3D, pos: Vector3) -> void:
+	var root := Node3D.new()
+	root.name = "BoneArmorBurst32"
+	parent.add_child(root)
+	for i in range(8):
+		var a := TAU * float(i) / 8.0
+		var plate := sphere(root, "ArmorPlate", pos + Vector3(cos(a) * 0.65, 0.45 + float(i % 2) * 0.42, sin(a) * 0.65), Vector3(0.22, 0.34, 0.09), Color("#f4ead4"), 0.82, 1.7)
+		_fade_free(plate, 0.65, Vector3.ONE * 0.35)
+	parent.get_tree().create_timer(0.72).timeout.connect(root.queue_free)
+
+static func spawn_wall_explosion(parent: Node3D, pos: Vector3, radius: float) -> void:
+	var root := Node3D.new()
+	root.name = "BoneWallExplosion32"
+	parent.add_child(root)
+	for r in range(3):
+		var ring := torus(root, "WallBlastRing", pos + Vector3.UP * 0.12, Vector3.ONE * (0.15 + r * 0.05), Color("#ffad55") if r == 1 else Color("#fff0d2"), 0.62, 3.3)
+		_fade_free(ring, 0.30 + r * 0.04, Vector3.ONE * radius * (0.75 + r * 0.12))
+	for i in range(18):
+		var a := TAU * float(i) / 18.0
+		var tip := pos + Vector3(cos(a) * radius * 0.72, 0.15 + float(i % 4) * 0.32, sin(a) * radius * 0.72)
+		var shard := cylinder(root, "ExplodingRib", pos + Vector3.UP * 0.5, tip, 0.045, Color("#fff2da"), 0.94, 2.2)
+		_fade_free(shard, 0.36, Vector3.ONE * 0.07)
+	parent.get_tree().create_timer(0.52).timeout.connect(root.queue_free)
+
+# GODOT_PHASE32_KAKA_VFX
 static func spawn_bubble_roll(parent: Node3D, pos: Vector3, power: float) -> void:
 	var root := Node3D.new()
 	root.name = "BubbleRollVFX"
