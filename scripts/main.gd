@@ -74,6 +74,7 @@ var kaka_charge_time := 0.0
 var kaka_charge_nails := 0
 var kaka_charge_visual: Node3D
 var kaka_hammer_stage := 0
+var grapple = preload("res://scripts/grapple35.gd").new()
 var kaka_hook_charge := 0.0
 var kaka_hook_target: CharacterBody3D
 var kaka_hook_projectile: Node3D
@@ -251,6 +252,7 @@ func _ready() -> void:
 	inventory_ui = preload("res://scripts/inventory_ui.gd").new()
 	add_child(inventory_ui)
 	inventory_ui.build(self)
+	mouth_intro.build_training()
 
 func role_upgrade_level(index := -1) -> int:
 	if not is_instance_valid(clinic_system): return 0
@@ -760,6 +762,7 @@ func _process(delta: float) -> void:
 	terrain_world.tick(delta)
 	if mouth_intro.active:
 		mouth_intro.tick(delta)
+		_tick_fun_items(delta)
 		round_time += delta
 		_update_gamepad_look(delta)
 		_tick_zones(delta)
@@ -1047,6 +1050,7 @@ func _physics_process(delta: float) -> void:
 		_update_hud()
 		return
 	if ko_time > 0.0:
+		_clear_kaka_hook_projectile()
 		ko_time = maxf(0.0, ko_time - delta)
 		player.velocity = Vector3.ZERO
 		if ko_time <= 0.0:
@@ -1098,15 +1102,19 @@ func _physics_process(delta: float) -> void:
 		speed = 10.5 + bubble_roll_power * 8.5
 		if move_dir.length_squared() <= 0.01: move_dir = _forward()
 	if is_instance_valid(clinic_system): speed *= clinic_system.movement_multiplier()
-	player.velocity.x = move_toward(player.velocity.x, move_dir.x * speed, 30.0 * delta)
-	player.velocity.z = move_toward(player.velocity.z, move_dir.z * speed, 30.0 * delta)
+	if kaka_hook_phase != "attached" and not (grapple.flight_grace>0.0 and not player.is_on_floor()):
+		player.velocity.x = move_toward(player.velocity.x, move_dir.x * speed, 30.0 * delta)
+		player.velocity.z = move_toward(player.velocity.z, move_dir.z * speed, 30.0 * delta)
 	if not player.is_on_floor(): player.velocity.y -= 22.0 * delta
 	var jump_down := Input.is_key_pressed(KEY_SPACE)
 	if not pads.is_empty(): jump_down = jump_down or Input.is_joy_button_pressed(pads[0], JOY_BUTTON_A)
-	if jump_down and not jump_latch and player.is_on_floor(): player.velocity.y = 10.2 if plasma_soda_time > 0.0 else 8.2
+	if jump_down and not jump_latch and kaka_hook_phase == "attached":
+		grapple.release(self,true)
+	elif jump_down and not jump_latch and player.is_on_floor(): player.velocity.y = 10.2 if plasma_soda_time > 0.0 else 8.2
 	jump_latch = jump_down
 	if spasm_time > 0.0: player.velocity.x += spasm_dir * 7.0 * delta
 	if drink_time > 0.0 and _in_drink_wave(player.position): player.velocity.x += drink_dir * (21.0 if acid_umbrella_time > 0.0 else 15.0) * delta
+	grapple.motion(self,delta,move_dir)
 	player.move_and_slide()
 	if mission_phase == "host_boss":
 		host_boss.keep_in_arena()
@@ -1145,7 +1153,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * 0.0025 * mouse_sensitivity
-		pitch = clampf(pitch - event.relative.y * 0.0022 * mouse_sensitivity, -1.05, 0.65)
+		pitch = clampf(pitch - event.relative.y * 0.0022 * mouse_sensitivity, -1.48, 1.48)
 		player.rotation.y = yaw
 		camera_pivot.rotation.x = pitch
 	elif event is InputEventMouseButton:
@@ -1241,6 +1249,7 @@ func _aim_forward() -> Vector3:
 	return (Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch) * Vector3.FORWARD).normalized()
 
 func _get_target(max_dist := 12.0, min_dot := 0.35) -> CharacterBody3D:
+	if is_instance_valid(mouth_intro) and mouth_intro.active: return null
 	var best: CharacterBody3D
 	var best_score := 9999.0
 	var f := _aim_forward()
@@ -2826,6 +2835,10 @@ func _secondary_pressed() -> void:
 	if not role_selected or game_paused or mission_phase == "win" or ko_time > 0.0:
 		return
 	if role_index == 1:
+		if kaka_hook_phase == "attached":
+			grapple.start_reel()
+			return
+		if not kaka_hook_phase.is_empty(): return
 		if secondary_attack_cd > 0.0: return
 		secondary_hold = true
 		kaka_hook_charge = 0.0
@@ -2840,6 +2853,9 @@ func _secondary_pressed() -> void:
 		_secondary_attack()
 
 func _secondary_released() -> void:
+	if role_index == 1 and kaka_hook_phase == "attached":
+		grapple.end_reel(self)
+		return
 	if role_index == 1 and secondary_hold:
 		secondary_hold = false
 		_release_kaka_hook()
@@ -3137,79 +3153,13 @@ func _kaka_bone_hook() -> void:
 	_toast("BONE HOOK: PULL + SHORT PIN", Color("#f2e8d4"), 1.4)
 
 func _release_kaka_hook() -> void:
-	var power := clampf(kaka_hook_charge, 0.12, 1.0)
-	var target := kaka_hook_target if is_instance_valid(kaka_hook_target) else _get_target(10.0 + power * 7.0, 0.08)
-	secondary_attack_cd = 0.75 + power * 1.15
-	_clear_kaka_hook_projectile()
-	kaka_hook_start = player.global_position + Vector3.UP * 0.86
-	kaka_hook_end = target.global_position + Vector3.UP * 0.72 if is_instance_valid(target) else kaka_hook_start + _forward() * (6.0 + power * 10.0)
-	kaka_hook_tip = kaka_hook_start
-	kaka_hook_flight = 0.0
-	kaka_hook_power = power
-	kaka_hook_victim = target
-	kaka_hook_phase = "outgoing"
-	kaka_hook_projectile = SkillVFX.spawn_hook_projectile(self, kaka_hook_start, power)
-	SkillVFX.update_hook_projectile(kaka_hook_projectile, kaka_hook_start, kaka_hook_tip, 0.0, false)
-	_toast("BONE HOOK: FIRED", Color("#f3dfbd"), 0.75)
-	_fp_action("HOOK LAUNCH", 0.44 + power * 0.16)
-	kaka_hook_charge = 0.0
-	kaka_hook_target = null
+	grapple.launch(self)
 
 func _tick_kaka_hook_projectile(delta: float) -> void:
-	if kaka_hook_phase.is_empty() or not is_instance_valid(kaka_hook_projectile):
-		return
-	var hook_origin := player.global_position + Vector3.UP * 0.86
-	if kaka_hook_phase == "outgoing":
-		if is_instance_valid(kaka_hook_victim):
-			kaka_hook_end = kaka_hook_victim.global_position + Vector3.UP * 0.72
-		var flight_distance := maxf(0.2, kaka_hook_start.distance_to(kaka_hook_end))
-		kaka_hook_flight = minf(1.0, kaka_hook_flight + delta * (17.0 + kaka_hook_power * 13.0) / flight_distance)
-		kaka_hook_tip = kaka_hook_start.lerp(kaka_hook_end, kaka_hook_flight)
-		SkillVFX.update_hook_projectile(kaka_hook_projectile, hook_origin, kaka_hook_tip, kaka_hook_flight, false)
-		if kaka_hook_flight >= 1.0:
-			if is_instance_valid(kaka_hook_victim) and not bool(kaka_hook_victim.get_meta("dead", false)):
-				_damage_enemy(kaka_hook_victim, 7.0 + kaka_hook_power * 7.0, 0.25 + kaka_hook_power * 0.42, 0.0, Vector3.ZERO, false)
-				SkillVFX.spawn_hook_bite(self, kaka_hook_tip, kaka_hook_power)
-				hit_shake = maxf(hit_shake, 0.08 + kaka_hook_power * 0.08)
-				if _is_host_boss(kaka_hook_victim):
-					_toast("HOOK BITES — TOO HEAVY TO PULL", Color("#ffcf78"), 1.1)
-					_clear_kaka_hook_projectile()
-				else:
-					kaka_hook_phase = "returning"
-					_toast("HOOK BITE: REELING IN!", Color("#ffcf78"), 1.0)
-			else:
-				_toast("BONE HOOK MISSED", Color("#d7c7ae"), 0.9)
-				_fp_action("HOOK MISS", 0.30)
-				_clear_kaka_hook_projectile()
-	elif kaka_hook_phase == "returning":
-		if not is_instance_valid(kaka_hook_victim) or bool(kaka_hook_victim.get_meta("dead", false)):
-			_clear_kaka_hook_projectile()
-			return
-		var pull_point := player.global_position + _forward() * 1.35
-		pull_point.y = player.global_position.y
-		var pull_offset := pull_point - kaka_hook_victim.global_position
-		var pull_distance := pull_offset.length()
-		if pull_distance > 0.001:
-			var pull_speed := 7.5 + kaka_hook_power * 10.5
-			kaka_hook_victim.velocity = pull_offset.normalized() * pull_speed
-			kaka_hook_victim.global_position = kaka_hook_victim.global_position.move_toward(pull_point, pull_speed * delta)
-		kaka_hook_tip = kaka_hook_victim.global_position + Vector3.UP * 0.72
-		SkillVFX.update_hook_projectile(kaka_hook_projectile, hook_origin, kaka_hook_tip, clampf(1.0 - pull_distance / 16.0, 0.0, 1.0), true)
-		if pull_distance <= 0.24:
-			kaka_hook_victim.global_position = pull_point
-			kaka_hook_victim.velocity = Vector3.ZERO
-			kaka_hook_victim.set_meta("hooked_close", 1.25)
-			_toast("HOOKED: HAMMER NOW!", Color("#ffcf78"), 1.25)
-			_fp_action("TARGET PULLED TO STRIKE", 0.62 + kaka_hook_power * 0.22)
-			_clear_kaka_hook_projectile()
+	grapple.tick(self,delta)
 
 func _clear_kaka_hook_projectile() -> void:
-	if is_instance_valid(kaka_hook_projectile):
-		kaka_hook_projectile.queue_free()
-	kaka_hook_projectile = null
-	kaka_hook_phase = ""
-	kaka_hook_victim = null
-	kaka_hook_flight = 0.0
+	grapple.clear(self)
 
 func _kaka_wall_command() -> void:
 	if not is_instance_valid(kaka_wall_preview):

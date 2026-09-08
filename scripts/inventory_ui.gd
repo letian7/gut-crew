@@ -10,6 +10,7 @@ var active_items: Label
 var treasure: Label
 var upgrades: Label
 var catalog: Label
+var supply_text: Label
 var refresh_clock := 0.0
 var opened_count := 0
 
@@ -76,7 +77,15 @@ func build(host) -> void:
 	body.add_child(left)
 	_label(left, "正在生效的临时装备", 20, Color("#72e8ff"))
 	active_items = _label(left, "", 17)
-	active_items.custom_minimum_size.y = 90
+	active_items.custom_minimum_size.y = 60
+	supply_text = _label(left,"",16)
+	var supplies := HBoxContainer.new()
+	left.add_child(supplies)
+	for kind in ["medkit","soda"]:
+		var use := Button.new()
+		use.text = "使用补胶包 +35HP" if kind=="medkit" else "喝血浆汽水 16秒"
+		use.pressed.connect(_use_training_supply.bind(kind))
+		supplies.add_child(use)
 	_label(left, "胃内寻宝袋  ·  最大 8 件", 20, Color("#ffcd72"))
 	treasure = _label(left, "", 16)
 	treasure.custom_minimum_size.y = 170
@@ -158,12 +167,19 @@ func _catalog_text() -> String:
 		rows.append("%s  %d C\n%s" % [ShopData.ITEM_NAMES[i], ShopData.ITEM_COSTS[i], description])
 	return "\n".join(rows)
 
+func _use_training_supply(kind: String) -> void:
+	if is_instance_valid(game.mouth_intro.training): game.mouth_intro.training.use_supply(kind)
+	refresh()
+
 func refresh() -> void:
 	if not is_instance_valid(game): return
 	var bag_count: int = int(game.clinic_system.bag.size()) if is_instance_valid(game.clinic_system) else 0
 	var bag_value: int = int(game.clinic_system.bag_value()) if is_instance_valid(game.clinic_system) else 0
 	summary.text = "BIOCOINS  %d C     寻宝袋  %d/8     估值  %d C     商店购买  %d 次" % [game.credits, bag_count, bag_value, game.purchases]
 	active_items.text = _active_text()
+	if is_instance_valid(game.mouth_intro.training):
+		var stock: Dictionary = game.mouth_intro.training.pockets
+		supply_text.text = "随身补给：补胶包 %d · 血浆汽水 %d" % [stock.medkit,stock.soda]
 	treasure.text = _treasure_text()
 	upgrades.text = _upgrade_text()
 	catalog.text = _catalog_text()

@@ -151,7 +151,7 @@ func refresh(initial := false) -> void:
 		var label: Label3D = gate.label
 		label.text = "%s\n%s" % [gate.title,"开放 ✓" if should_open else "完成上一关后开放"]
 		label.modulate = Color("9fffd1") if should_open else Color("ffbd9f")
-		if should_open and not bool(gate.open) and not initial:
+		if should_open and not bool(gate.open) and not initial and game.mission_phase in ["diagnose","chase","return"]:
 			game._toast("关卡完成！%s 已舒张，下一段消化道开放" % gate.title,Color("a8ffe0"),3.0)
 		gate.open = should_open
 	if chapter!=last_chapter:

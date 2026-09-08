@@ -11,6 +11,14 @@ var swallow_time := -1.0
 var safe := SPAWN
 var hidden_world: Array[Dictionary] = []
 var roof_lift := 1.0
+var training: Node3D
+
+func build_training() -> void:
+	training = preload("res://scripts/mouth_training35.gd").new()
+	add_child(training)
+	training.global_transform = Transform3D.IDENTITY
+	training.build(game,self)
+
 
 func _surface(label: String, vertices: Array[Vector3], ids: Array[int], color: Color, solid := true) -> MeshInstance3D:
 	var st := SurfaceTool.new()
@@ -134,11 +142,13 @@ func begin() -> void:
 		if node is Node3D and node != self and node != game.player and not node is Light3D:
 			hidden_world.append({"node":node,"visible":node.visible})
 			node.visible = false
+	if is_instance_valid(training): training.reset()
 	active = true
 	completed = false
 	swallow_time = -1.0
 	safe = game.world_point(SPAWN)
 	game.mission_phase = "mouth"
+	game.mission_label.text = "新手入职 · 两侧教学站可自由练习，沿舌面进入咽喉"
 	game.player.position = game.world_point(SPAWN)
 	game.player.velocity = Vector3.ZERO
 	game.yaw = 0.0
@@ -171,6 +181,7 @@ func keep_inside() -> void:
 
 func tick(delta: float) -> void:
 	if not active or game.game_paused: return
+	if is_instance_valid(training): training.tick(delta)
 	game.mission_label.text = "猫嘴 → 咽喉 → 胃部上层  |  沿舌面向下走"
 	if game.player.position.z < 35.5*game.world_scale and swallow_time < 0:
 		swallow_time = 1.2
@@ -183,6 +194,8 @@ func tick(delta: float) -> void:
 		if swallow_time <= 0: finish()
 
 func finish() -> void:
+	game._clear_kaka_hook_projectile()
+	if is_instance_valid(training): training.hide_prompt()
 	_restore_world()
 	active = false
 	completed = true

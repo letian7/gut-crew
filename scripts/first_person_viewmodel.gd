@@ -114,6 +114,10 @@ func _build_tool(index: int) -> void:
 			var hook_shaft := _part(tool_root, "BoneDriver", _cylinder(0.055, 0.60), Vector3(0.08, 0.31, -0.39), Vector3.ONE, Color("#9d8063"))
 			hook_shaft.rotation.x = PI * 0.5
 			Art.hook(tool_root, "BoneHook", Vector3(0.08,0.36,-0.73),0.19)
+			var muzzle := Marker3D.new()
+			muzzle.name = "HookMuzzle"
+			muzzle.position = Vector3(0.08+cos(4.3)*0.19,0.36+sin(4.3)*0.19,-0.73+0.035*sin(8.6))
+			tool_root.add_child(muzzle)
 			for i in range(7):
 				var wrap := _part(left_arm,"HammerGripWrap",_cylinder(0.068,0.027),Vector3(-0.09,0.31,-0.12-float(i)*0.046),Vector3.ONE,Color("#715143"))
 				wrap.rotation.x=PI*0.5

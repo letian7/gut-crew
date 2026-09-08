@@ -33,7 +33,7 @@ func build(host) -> void:
 	action_label = Label.new()
 	action_label.add_theme_font_size_override("font_size", 17)
 	action_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	action_label.size = Vector2(420, 30)
+	action_label.size = Vector2(640, 30)
 	action_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(action_label)
 	set_process(true)
@@ -96,14 +96,19 @@ func _process(delta: float) -> void:
 	charge_ring.visible = charge > 0.01
 	charge_ring.points = _circle(center, 42.0 + charge * 7.0, charge)
 	charge_ring.default_color = color.lerp(Color.WHITE, charge * 0.35)
-	action_label.position = Vector2(center.x - 210.0, center.y + 58.0)
+	action_label.position = Vector2(center.x - 320.0, center.y + 58.0)
 	action_label.modulate = color
 	if pulse <= 0.0 and charge <= 0.01:
 		action_label.text = "LOCKED" if locked else "SEARCHING"
 	elif charge > 0.01:
 		if game.secondary_hold:
-			action_label.text = "HOOK LOCK %d%%" % int(charge * 100.0)
+			action_label.text = "骨钩蓄力 %d%% · 墙体/重型怪：牵引自身" % int(charge * 100.0)
 		else:
 			action_label.text = "HAMMER STAGE %d" % maxi(1, game.kaka_hammer_stage)
+
+	if game.role_index==1 and game.kaka_hook_phase=="attached":
+		action_label.text = "挂绳 %.1fm · 右键长按收绳 / 轻点脱钩 · 空格跃出" % game.grapple.rope_length
+	elif game.role_index==1 and game.kaka_hook_phase=="outgoing":
+		action_label.text = "骨钩飞行中"
 
 # GODOT_PHASE32_FIRST_PERSON_AIM
