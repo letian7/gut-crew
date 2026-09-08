@@ -1,4 +1,5 @@
 extends RefCounted
+const Art = preload("res://scripts/clay_art.gd")
 
 static func mat(color: Color, alpha: float = 1.0, glow: float = 0.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -630,7 +631,7 @@ static func spawn_hook_projectile(parent: Node3D, origin: Vector3, power: float)
 	var bone := Color("#ead9bb")
 	var dark_bone := Color("#b69976")
 	sphere(head, "HookSocket", Vector3.ZERO, Vector3(0.28, 0.24, 0.24), dark_bone, 1.0, 0.12)
-	torus(head, "HookJawRing", Vector3(0, 0, -0.10), Vector3(0.31, 0.31, 0.22), bone, 1.0, 0.16).rotation.x = PI * 0.5
+	Art.hook(head,"HookJawRing",Vector3(0,0,-0.10),0.31)
 	cylinder(head, "HookFangLeft", Vector3(-0.23, 0.02, -0.04), Vector3(-0.08, -0.24, -0.38), 0.065, bone, 1.0, 0.12)
 	cylinder(head, "HookFangRight", Vector3(0.23, 0.02, -0.04), Vector3(0.08, -0.24, -0.38), 0.065, bone, 1.0, 0.12)
 	sphere(head, "HookToothLeft", Vector3(-0.08, -0.24, -0.38), Vector3(0.10, 0.15, 0.10), Color("#fff3dc"), 1.0, 0.18)
@@ -708,9 +709,11 @@ static func spawn_bone_wall(parent: Node3D, pos: Vector3, yaw: float, preview: b
 			var p2 := Vector3(side * 1.02, rib_y + 0.02, 0.30)
 			var p3 := Vector3(side * spread, rib_y - 0.20, 0.07)
 			var side_name := "L" if side < 0.0 else "R"
-			cylinder(wall, "RibInner%s%d" % [side_name, level], p0, p1, 0.105, bone, alpha, glow)
-			cylinder(wall, "RibMiddle%s%d" % [side_name, level], p1, p2, 0.115, bone, alpha, glow)
-			cylinder(wall, "RibOuter%s%d" % [side_name, level], p2, p3, 0.095, bone, alpha, glow)
+			var rib_color := Color(bone.r,bone.g,bone.b,alpha)
+			Art.tube(wall,"SculptedRib%s%d" % [side_name,level],Art.bezier(p0,p1+Vector3.UP*0.13,p2+Vector3.UP*0.16,p3),0.13,rib_color,true)
+			for detail in range(2):
+				var groove_pos := p1.lerp(p2,float(detail)*0.48)+Vector3(0,0.05,0.105)
+				sphere(wall,"BoneSurfaceDimple",groove_pos,Vector3(0.09,0.035,0.012),Color("#ac957a"),alpha,0.0)
 			sphere(wall, "RibRoot%s%d" % [side_name, level], p0, Vector3(0.22, 0.20, 0.18), joint, alpha, glow)
 			sphere(wall, "RibElbow%s%d" % [side_name, level], p1, Vector3(0.20, 0.19, 0.18), joint, alpha, glow)
 			sphere(wall, "RibKnuckle%s%d" % [side_name, level], p2, Vector3(0.21, 0.20, 0.19), joint, alpha, glow)
@@ -759,16 +762,17 @@ static func spawn_bone_armor(parent: Node3D, pos: Vector3) -> void:
 	parent.get_tree().create_timer(0.72).timeout.connect(root.queue_free)
 
 static func spawn_wall_explosion(parent: Node3D, pos: Vector3, radius: float) -> void:
+	Art.debris(parent,pos,radius)
 	var root := Node3D.new()
 	root.name = "BoneWallExplosion32"
 	parent.add_child(root)
 	for r in range(3):
-		var ring := torus(root, "WallBlastRing", pos + Vector3.UP * 0.12, Vector3.ONE * (0.15 + r * 0.05), Color("#ffad55") if r == 1 else Color("#fff0d2"), 0.62, 3.3)
+		var ring := torus(root, "WallBlastRing", pos + Vector3.UP * 0.12, Vector3.ONE * (0.15 + r * 0.05), Color("#ffad55") if r == 1 else Color("#fff0d2"), 0.27, 0.65)
 		_fade_free(ring, 0.30 + r * 0.04, Vector3.ONE * radius * (0.75 + r * 0.12))
 	for i in range(18):
 		var a := TAU * float(i) / 18.0
 		var tip := pos + Vector3(cos(a) * radius * 0.72, 0.15 + float(i % 4) * 0.32, sin(a) * radius * 0.72)
-		var shard := cylinder(root, "ExplodingRib", pos + Vector3.UP * 0.5, tip, 0.045, Color("#fff2da"), 0.94, 2.2)
+		var shard := cylinder(root, "ExplodingRib", pos + Vector3.UP * 0.5, tip, 0.045, Color("#fff2da"), 0.65, 0.30)
 		_fade_free(shard, 0.36, Vector3.ONE * 0.07)
 	parent.get_tree().create_timer(0.52).timeout.connect(root.queue_free)
 

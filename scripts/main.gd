@@ -1823,7 +1823,9 @@ func _spawn_skill_visual(slot: int) -> void:
 	var target_pos: Vector3 = player.global_position + _forward() * 8.0 + Vector3.UP * 0.8
 	var target_enemy := _get_target(14.0, 0.05)
 	if is_instance_valid(target_enemy): target_pos = target_enemy.global_position + Vector3.UP * 0.7
-	SkillVFX.spawn_cast(self, role_index, slot, player.global_position + Vector3.UP * 0.85, _forward(), target_pos)
+	# Kaka owns wall/armor VFX; legacy bridge/pin effects obscure the camera.
+	if role_index != 1:
+		SkillVFX.spawn_cast(self, role_index, slot, player.global_position + Vector3.UP * 0.85, _forward(), target_pos)
 	var active_camera := camera_1p if first_person else camera_3p
 	var base_fov := minf(camera_fov + 4.0, 90.0) if first_person else camera_fov
 	active_camera.fov = base_fov + (5.5 if slot == 1 else 3.5)

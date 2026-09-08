@@ -1,4 +1,5 @@
 extends Node3D
+const Art = preload("res://scripts/clay_art.gd")
 ## Phase 30: clay first-person arms and role-specific field tools.
 var game
 var left_arm: Node3D
@@ -11,7 +12,7 @@ var action_strength := 0.0
 var action_kind := ""
 
 func _mat(color: Color, emission := 0.0) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
+	var mat := Art.material(color)
 	mat.albedo_color = color
 	mat.roughness = 0.82
 	if emission > 0.0:
@@ -112,11 +113,19 @@ func _build_tool(index: int) -> void:
 			_part(left_arm, "HammerKnuckleR", _sphere(0.13), Vector3(0.21, 0.34, -0.72), Vector3(0.85, 0.96, 1.0), Color("#f2e4cc"))
 			var hook_shaft := _part(tool_root, "BoneDriver", _cylinder(0.055, 0.60), Vector3(0.08, 0.31, -0.39), Vector3.ONE, Color("#9d8063"))
 			hook_shaft.rotation.x = PI * 0.5
-			var hook_ring := _part(tool_root, "BoneHook", TorusMesh.new(), Vector3(0.08, 0.33, -0.72), Vector3(0.16, 0.16, 0.16), Color("#ead8ba"), 0.25)
-			hook_ring.rotation.y = PI * 0.5
-			_part(tool_root, "HookToothA", _capsule(0.035, 0.22), Vector3(-0.06, 0.42, -0.78), Vector3.ONE, Color("#fff2d9"), 0.35).rotation.z = -0.72
-			_part(tool_root, "HookToothB", _capsule(0.035, 0.22), Vector3(0.22, 0.42, -0.78), Vector3.ONE, Color("#fff2d9"), 0.35).rotation.z = 0.72
-			_part(tool_root, "HookSight", _sphere(0.040), Vector3(0.08, 0.49, -0.67), Vector3.ONE, Color("#ffb85c"), 2.1)
+			Art.hook(tool_root, "BoneHook", Vector3(0.08,0.36,-0.73),0.19)
+			for i in range(7):
+				var wrap := _part(left_arm,"HammerGripWrap",_cylinder(0.068,0.027),Vector3(-0.09,0.31,-0.12-float(i)*0.046),Vector3.ONE,Color("#715143"))
+				wrap.rotation.x=PI*0.5
+			for side in [-1.0,1.0]:
+				var cap := _part(left_arm,"HammerStrikePad",_sphere(0.115),Vector3(-0.09+side*0.30,0.34,-0.72),Vector3(0.33,0.94,0.96),Color("#b5a084"))
+				cap.rotation.z=side*0.12
+			for i in range(5):
+				_part(left_arm,"HammerPore",_sphere(0.015),Vector3(-0.24+float(i)*0.075,0.40,-0.838),Vector3(1.0,0.45,0.20),Color("#ae967c"))
+			for i in range(6):
+				var ring := _part(tool_root,"HookGripWrap",_cylinder(0.063,0.028),Vector3(0.08,0.31,-0.13-float(i)*0.046),Vector3.ONE,Color("#715143"))
+				ring.rotation.x=PI*0.5
+
 		2:
 			var nozzle := _part(tool_root, "PlasmaNozzle", _cylinder(0.11, 0.46), Vector3(0.02, 0.30, -0.38), Vector3.ONE, Color("#70e8ff"), 1.4)
 			nozzle.rotation.x = PI * 0.5
